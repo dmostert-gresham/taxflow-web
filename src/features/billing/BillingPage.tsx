@@ -2,6 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { CheckCircle2, Zap, Building2, Users, Star } from 'lucide-react'
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, Subscription } from '../../types'
+import { useAuthStore } from '../../stores/authStore'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -78,6 +79,9 @@ const PLANS = [
 ]
 
 export default function BillingPage() {
+  const user = useAuthStore((s) => s.user)
+  const isPractitioner = user?.role === 'PRACTITIONER'
+
   const { data: subscription, refetch } = useQuery({
     queryKey: ['subscription'],
     queryFn: async () => {
@@ -143,12 +147,16 @@ export default function BillingPage() {
         {PLANS.map((plan) => {
           const isCurrent = currentPlan === plan.id && isActive
           const isPro     = plan.id === 'PROFESSIONAL'
+          const isRestricted = isPractitioner
+            ? plan.id !== 'PRACTITIONER'
+            : plan.id === 'PRACTITIONER'
 
           return (
             <div
               key={plan.id}
               className={clsx(
                 'card p-5 flex flex-col border-2 relative',
+                isRestricted && 'opacity-60',
                 isCurrent ? 'border-teal' : plan.color,
                 isPro && !isCurrent && 'border-teal/40'
               )}
@@ -203,20 +211,23 @@ export default function BillingPage() {
               </ul>
 
               <button
-                onClick={() => plan.price > 0 && subscribeMutation.mutate(plan.id)}
-                disabled={isCurrent || plan.price === 0 || subscribeMutation.isPending}
+                onClick={() => !isRestricted && plan.price > 0 && subscribeMutation.mutate(plan.id)}
+                disabled={isCurrent || plan.price === 0 || isRestricted || subscribeMutation.isPending}
                 className={clsx(
                   'w-full py-2 rounded-lg text-sm font-medium transition-colors',
                   isCurrent
                     ? 'bg-teal/10 text-teal-dark cursor-default'
-                    : plan.price === 0
-                      ? 'bg-slate-100 text-slate-400 cursor-default'
-                      : isPro
-                        ? 'bg-teal text-white hover:bg-teal-light'
-                        : 'bg-navy text-white hover:bg-navy-light'
+                    : isRestricted
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : plan.price === 0
+                        ? 'bg-slate-100 text-slate-400 cursor-default'
+                        : isPro
+                          ? 'bg-teal text-white hover:bg-teal-light'
+                          : 'bg-navy text-white hover:bg-navy-light'
                 )}
               >
                 {isCurrent ? 'Current plan' :
+                 isRestricted ? 'Not available for your account type' :
                  plan.price === 0 ? 'Free forever' :
                  subscribeMutation.isPending ? 'Loading…' :
                  'Subscribe'}
@@ -228,7 +239,7 @@ export default function BillingPage() {
 
       {/* Payment note */}
       <div className="text-center text-xs text-slate-400">
-        Payments processed securely by DPO Group · Namibian Dollars (NAD) ·
+        Payments processed securely by DPO Group ·
         Cancel anytime
       </div>
     </div>

@@ -1,8 +1,8 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, Navigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowUpDown, FileText, FolderOpen,
   MessageSquare, Scale, CreditCard, LogOut, ChevronRight,
-  TrendingUp, ShieldCheck,
+  TrendingUp, ShieldCheck, Users, X,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
@@ -16,25 +16,31 @@ const PLAN_RANK: Record<Plan, number> = {
   BASIC: 0, PROFESSIONAL: 1, BUSINESS: 2, PRACTITIONER: 3,
 }
 
-const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; minPlan?: Plan }[] = [
-  { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/returns',       icon: FileText,        label: 'Returns',        minPlan: 'BASIC' },
-  { to: '/documents',     icon: FolderOpen,      label: 'Documents',      minPlan: 'BASIC' },
-  { to: '/transactions',  icon: ArrowUpDown,     label: 'Transactions',   minPlan: 'PROFESSIONAL' },
-  { to: '/assistant',     icon: MessageSquare,   label: 'AI Assistant',   minPlan: 'PROFESSIONAL' },
-  { to: '/trial-balance', icon: Scale,           label: 'Trial Balance',  minPlan: 'BUSINESS' },
+const NAV_ITEMS: {
+  to: string; icon: React.ElementType; label: string;
+  minPlan?: Plan; adminHide?: boolean; roleOnly?: string; practitionerHide?: boolean
+}[] = [
+  { to: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard',                       adminHide: true, practitionerHide: true },
+  { to: '/returns',              icon: FileText,        label: 'Returns',      minPlan: 'BASIC',  adminHide: true, practitionerHide: true },
+  { to: '/documents',            icon: FolderOpen,      label: 'Documents',    minPlan: 'BASIC',  adminHide: true, practitionerHide: true },
+  { to: '/transactions',         icon: ArrowUpDown,     label: 'Transactions', minPlan: 'PROFESSIONAL' },
+  { to: '/assistant',            icon: MessageSquare,   label: 'AI Assistant', minPlan: 'PROFESSIONAL' },
+  { to: '/trial-balance',        icon: Scale,           label: 'Trial Balance', minPlan: 'BUSINESS' },
+  { to: '/practitioner/clients', icon: Users,           label: 'My Clients',   roleOnly: 'PRACTITIONER' },
 ]
 
 const ADMIN_ITEMS = [
-  { to: '/admin/users',         icon: ShieldCheck, label: 'Users' },
-  { to: '/admin/subscriptions', icon: CreditCard,  label: 'Subscriptions' },
+  { to: '/admin/users', icon: ShieldCheck, label: 'Users' },
 ]
 
 export default function AppShell() {
-  const { user, logout } = useAuthStore()
+  const { user, logout, practitionerSession, exitImpersonation } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const isAdmin = user?.role === 'ADMIN'
+  const isAdmin          = user?.role === 'ADMIN'
+  const isPractitioner   = user?.role === 'PRACTITIONER'
+  const isImpersonating  = !!practitionerSession
 
   const { data: billingStatus } = useQuery({
     queryKey: ['subscription'],
@@ -50,13 +56,27 @@ export default function AppShell() {
   const userPlan: Plan = billingStatus?.plan ?? 'BASIC'
   const userRank = PLAN_RANK[userPlan]
 
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) => !item.minPlan || userRank >= PLAN_RANK[item.minPlan]
-  )
+  const subStatus = billingStatus?.status
+  const subLapsed = !isAdmin && !!subStatus && subStatus !== 'ACTIVE'
+
+  const visibleNavItems = subLapsed
+    ? []
+    : NAV_ITEMS.filter(
+        (item) =>
+          (!item.adminHide || !isAdmin) &&
+          (!item.minPlan || userRank >= PLAN_RANK[item.minPlan]) &&
+          (!item.roleOnly || user?.role === item.roleOnly) &&
+          (!item.practitionerHide || !isPractitioner || isImpersonating)
+      )
 
   const handleLogout = () => {
     logout()
     navigate('/login')
+  }
+
+  const handleExitImpersonation = () => {
+    exitImpersonation()
+    navigate('/practitioner/clients')
   }
 
   const initials = user?.fullName
@@ -66,6 +86,11 @@ export default function AppShell() {
       .toUpperCase()
       .slice(0, 2) ?? '?'
 
+  const allowedWhenLapsed = ['/billing', '/profile']
+  if (subLapsed && !allowedWhenLapsed.some((p) => location.pathname.startsWith(p))) {
+    return <Navigate to="/billing" replace />
+  }
+
   return (
       <div className="flex h-screen bg-slate-50 overflow-hidden">
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
@@ -73,15 +98,17 @@ export default function AppShell() {
           {/* Logo */}
           <div className="px-6 py-5 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-navy rounded-lg flex items-center justify-center">
-                <TrendingUp size={16} className="text-teal" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                   style={{ background: 'linear-gradient(135deg, #1565C0 0%, #00C8EE 100%)' }}>
+                <TrendingUp size={16} className="text-white" />
               </div>
               <div>
-                <div className="font-display font-bold text-navy text-sm leading-tight">
-                  TaxFlow
+                <div className="font-display font-bold text-sm leading-tight">
+                  <span className="text-navy">Tax</span>
+                  <span style={{ background: 'linear-gradient(90deg, #1565C0, #00C8EE)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Fuse</span>
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium tracking-wide">
-                  NAMIBIA
+                  SMART TAX
                 </div>
               </div>
             </div>
@@ -130,19 +157,28 @@ export default function AppShell() {
           {/* Bottom section */}
           <div className="border-t border-slate-100 p-3 space-y-1">
             {/* Billing */}
-            <NavLink
-                to="/billing"
-                className={({ isActive }) =>
-                    clsx('sidebar-item', isActive && 'active')
-                }
-            >
-              <CreditCard size={17} className="shrink-0" />
-              <span>Billing</span>
-            </NavLink>
+            {!isAdmin && (
+              <NavLink
+                  to="/billing"
+                  className={({ isActive }) =>
+                      clsx('sidebar-item', isActive && 'active')
+                  }
+              >
+                <CreditCard size={17} className="shrink-0" />
+                <span>Billing</span>
+              </NavLink>
+            )}
 
             {/* User */}
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg
-                          hover:bg-slate-50 cursor-pointer transition-colors group">
+            <NavLink
+              to="/profile"
+              className={({ isActive }) =>
+                clsx(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group',
+                  isActive ? 'bg-navy/5' : 'hover:bg-slate-50'
+                )
+              }
+            >
               <div className="w-7 h-7 rounded-full bg-navy flex items-center
                             justify-center text-white text-xs font-semibold shrink-0">
                 {initials}
@@ -157,7 +193,7 @@ export default function AppShell() {
               </div>
               <ChevronRight size={14} className="text-slate-300
                           group-hover:text-slate-400 transition-colors" />
-            </div>
+            </NavLink>
 
             {/* Logout */}
             <button
@@ -173,6 +209,27 @@ export default function AppShell() {
 
         {/* ── Main content ─────────────────────────────────────────────────── */}
         <main className="flex-1 overflow-y-auto">
+          {/* Impersonation banner */}
+          {isImpersonating && (
+            <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5
+                            flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-2 text-sm text-amber-800">
+                <Users size={15} className="text-amber-600" />
+                <span>
+                  Viewing as <span className="font-semibold">{user?.fullName}</span>
+                </span>
+              </div>
+              <button
+                onClick={handleExitImpersonation}
+                className="flex items-center gap-1.5 text-xs font-medium text-amber-700
+                           hover:text-amber-900 transition-colors"
+              >
+                <X size={13} />
+                Exit to my account
+              </button>
+            </div>
+          )}
+
           <div className="max-w-6xl mx-auto px-8 py-8 animate-fade-in">
             <Outlet />
           </div>

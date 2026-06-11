@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   ChevronDown, AlertCircle, Download, Wand2,
   TrendingUp, TrendingDown, Minus, ArrowRight,
-  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle, Lock,
+  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle,
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
 import type { ApiResponse, TaxReturnModel, DeductionSuggestion, IncomeSummary, Paye5Result } from '../../types'
@@ -119,6 +119,7 @@ export default function ReturnsPage() {
   const resetMutation = useMutation({
     mutationFn: async () => {
       await api.delete('/statements', { params: { taxYear } })
+      await api.delete('/documents/paye5', { params: { taxYear } })
     },
     onSuccess: async () => {
       // Delete saved deductions from the database too
@@ -139,6 +140,7 @@ export default function ReturnsPage() {
       })
       setLoadedForYear(taxYear)
       queryClient.invalidateQueries({ queryKey: ['transactions', taxYear] })
+      queryClient.setQueryData(['paye5', taxYear], { found: false })
       queryClient.removeQueries({ queryKey: ['tax-return', taxYear] })
       setShowResetDialog(false)
       toast.success(`${taxYear} return has been reset`)
@@ -204,15 +206,25 @@ export default function ReturnsPage() {
 
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true)
+    const grossVal = parseFloat(displayGross) || 0
     try {
       const res = await api.get('/pdf/itx-return', {
-        params: { taxYear, payeAlreadyPaid: paye, pensionContributions: pension, medicalExpenses: medical },
+        params: {
+          taxYear,
+          ...(grossVal > 0 ? { grossIncome: grossVal } : {}),
+          payeAlreadyPaid:           parseFloat(displayPaye)    || 0,
+          pensionContributions:      parseFloat(displayPension)  || 0,
+          medicalExpenses:           parseFloat(medical)         || 0,
+          donationsToApprovedBodies: parseFloat(donations)       || 0,
+          studyLoanInterest:         parseFloat(studyLoan)       || 0,
+          otherDeductions:           parseFloat(otherDeductions) || 0,
+        },
         responseType: 'blob',
       })
       const url  = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
       const link = document.createElement('a')
       link.href  = url
-      link.download = `TaxFlow_ITX_${taxYear.replace('/', '-')}.pdf`
+      link.download = `TaxFuse_ITX_${taxYear.replace('/', '-')}.pdf`
       link.click()
       URL.revokeObjectURL(url)
     } catch {
@@ -246,70 +258,8 @@ export default function ReturnsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left column — adjustments + result */}
+          {/* Left column — result */}
           <div className="lg:col-span-2 space-y-5">
-            {/* Deduction inputs */}
-            <div className="card p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="section-title mb-0">Income &amp; deductions</h2>
-                <span className="text-xs text-slate-400">Values are saved per tax year</span>
-              </div>
-
-              {/* Gross income — read-only; sourced from PAYE5 cert or imported transactions */}
-              <div className="mb-4 pb-4 border-b border-slate-100">
-                <label className="label flex items-center gap-1.5">
-                  Gross Income (from PAYE5)
-                  <Lock size={12} className="text-slate-400" />
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">N$</span>
-                  <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      className="input pl-9 bg-slate-50 text-slate-500 cursor-not-allowed"
-                      value={displayGross}
-                      readOnly
-                  />
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  <>Sourced from your PAYE5 certificate — <Link to="/documents" className="underline hover:text-navy">update on Documents page</Link></>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[
-                  { label: 'PAYE already paid',     displayValue: displayPaye,    hint: 'From your PAYE5 certificate' },
-                  { label: 'Pension contributions', displayValue: displayPension, hint: 'Max N$40,000 — ITA s17(1)(a)' },
-                  { label: 'Medical expenses',      displayValue: medical,        hint: 'ITA s17(1)(f)' },
-                  { label: 'Donations',             displayValue: donations,      hint: 'Approved bodies — ITA s17(1)(s)' },
-                  { label: 'Study loan interest',   displayValue: studyLoan,      hint: 'ITA s17(1)(b)' },
-                  { label: 'Other deductions',      displayValue: otherDeductions,hint: 'Other allowable deductions' },
-                ].map(({ label, displayValue, hint }) => (
-                    <div key={label}>
-                      <label className="label flex items-center gap-1.5">
-                        {label}
-                        <Lock size={12} className="text-slate-400" />
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">N$</span>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            className="input pl-9 bg-slate-50 text-slate-500 cursor-not-allowed"
-                            value={displayValue}
-                            readOnly
-                        />
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {hint} — <Link to="/documents" className="underline hover:text-navy">update on Documents page</Link>
-                      </p>
-                    </div>
-                ))}
-              </div>
-            </div>
-
             {/* Result */}
             {isLoading ? (
                 <div className="card p-12 flex items-center justify-center">
@@ -323,7 +273,7 @@ export default function ReturnsPage() {
             ) : data ? (
                 <>
                   <StatusBanner data={data} />
-                  <BreakdownCard data={data} />
+                  <BreakdownCard data={data} hasPaye5={hasPaye5} />
                 </>
             ) : null}
           </div>
@@ -536,14 +486,15 @@ function StatusBanner({ data }: { data: TaxReturnModel }) {
   )
 }
 
-function BreakdownCard({ data }: { data: TaxReturnModel }) {
+function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPaye5?: boolean }) {
   const hasBreakdown = data.salary != null
+  const p5 = hasPaye5 ? ' (PAYE5)' : ''
 
   type RowType = 'income-item' | 'income' | 'deduction-item' | 'deduction' | 'subtotal' | 'tax' | 'result'
   const rows: { label: string; value: number; type: RowType }[] = []
 
   if (hasBreakdown) {
-    if ((data.salary         ?? 0) > 0) rows.push({ label: 'Salary',                value:  data.salary!,         type: 'income-item' })
+    if ((data.salary         ?? 0) > 0) rows.push({ label: `Salary${p5}`,           value:  data.salary!,         type: 'income-item' })
     if ((data.commission     ?? 0) > 0) rows.push({ label: 'Commission',             value:  data.commission!,     type: 'income-item' })
     if ((data.freelanceIncome ?? 0) > 0) rows.push({ label: 'Freelance / Contract', value:  data.freelanceIncome!, type: 'income-item' })
     if ((data.rentalIncome   ?? 0) > 0) rows.push({ label: 'Rental Income',          value:  data.rentalIncome!,   type: 'income-item' })
@@ -552,19 +503,19 @@ function BreakdownCard({ data }: { data: TaxReturnModel }) {
     if ((data.allowanceIncome ?? 0) > 0) rows.push({ label: 'Allowances',            value:  data.allowanceIncome!,type: 'income-item' })
   }
 
-  rows.push({ label: hasBreakdown ? 'Total Income' : 'Gross Income', value: data.grossIncome, type: 'income' })
+  rows.push({ label: hasBreakdown ? 'Total Income' : `Gross Income${p5}`, value: data.grossIncome, type: 'income' })
 
-  if (data.pensionContributions      > 0) rows.push({ label: 'Pension Contributions', value: -data.pensionContributions,     type: 'deduction-item' })
-  if (data.medicalExpenses           > 0) rows.push({ label: 'Medical Expenses',       value: -data.medicalExpenses,          type: 'deduction-item' })
-  if (data.donationsToApprovedBodies > 0) rows.push({ label: 'Donations',              value: -data.donationsToApprovedBodies,type: 'deduction-item' })
-  if (data.studyLoanInterest         > 0) rows.push({ label: 'Study Loan Interest',    value: -data.studyLoanInterest,        type: 'deduction-item' })
-  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',        value: -data.otherDeductions,          type: 'deduction-item' })
+  if (data.pensionContributions      > 0) rows.push({ label: `Pension Contributions${p5}`, value: -data.pensionContributions,     type: 'deduction-item' })
+  if (data.medicalExpenses           > 0) rows.push({ label: 'Medical Expenses',            value: -data.medicalExpenses,          type: 'deduction-item' })
+  if (data.donationsToApprovedBodies > 0) rows.push({ label: 'Donations',                   value: -data.donationsToApprovedBodies,type: 'deduction-item' })
+  if (data.studyLoanInterest         > 0) rows.push({ label: 'Study Loan Interest',         value: -data.studyLoanInterest,        type: 'deduction-item' })
+  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item' })
 
-  rows.push({ label: 'Taxable Income',      value:  data.taxableIncome,    type: 'subtotal' })
-  rows.push({ label: 'Gross Tax',           value:  data.grossTax,         type: 'tax' })
-  rows.push({ label: 'PAYE Already Paid',   value: -data.payeAlreadyPaid,  type: 'deduction' })
-  rows.push({ label: 'Net Tax Payable',     value:  data.netTax,           type: 'subtotal' })
-  rows.push({ label: 'Refund / (Tax Owed)', value:  data.refundOrLiability,type: 'result' })
+  rows.push({ label: 'Taxable Income',              value:  data.taxableIncome,    type: 'subtotal' })
+  rows.push({ label: 'Gross Tax',                   value:  data.grossTax,         type: 'tax' })
+  rows.push({ label: `PAYE Already Paid${p5}`,      value: -data.payeAlreadyPaid,  type: 'deduction' })
+  rows.push({ label: 'Net Tax Payable',             value:  data.netTax,           type: 'subtotal' })
+  rows.push({ label: 'Refund / (Tax Owed)',         value:  data.refundOrLiability,type: 'result' })
 
   return (
       <div className="card overflow-hidden">

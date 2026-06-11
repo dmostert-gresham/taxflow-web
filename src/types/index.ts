@@ -18,7 +18,6 @@ export interface AuthResponse {
   fullName: string
   role: string
   tin: string
-  isBeta: boolean
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────
@@ -153,6 +152,41 @@ export interface DashboardSummary {
   daysUntilDeadline: number
   deadlineDate: string
   taxYear: string
+}
+
+// ─── Tax Certificate (Retirement Fund / Study Policy) ─────────────────────
+export interface TaxCertItem {
+  id: number
+  taxYear: string
+  amount?: number
+  name?: string
+  originalFilename?: string
+  uploadedAt?: string
+  hasFile: boolean
+}
+
+export interface TaxCertListResult {
+  items: TaxCertItem[]
+  totalAmount: number
+}
+
+export interface TaxCertUploadResult {
+  success: boolean
+  id?: number
+  taxYear?: string
+  amount?: number
+  message: string
+}
+
+// ─── Practitioner clients ─────────────────────────────────────────────────
+export interface ClientSummary {
+  id: number
+  fullName: string
+  email: string
+  role: string
+  plan: string
+  subscriptionStatus: string
+  expiresAt: string | null
 }
 
 // ─── ITAS Pre-fill ────────────────────────────────────────────────────────

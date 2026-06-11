@@ -81,10 +81,10 @@ export default function AssistantPage() {
               </div>
               <div>
                 <h1 className="font-display font-bold text-navy text-lg leading-tight">
-                  Namibian Tax Assistant
+                  Tax Assistant
                 </h1>
                 <p className="text-xs text-slate-400">
-                  Powered by Claude · Grounded in Namibian ITA
+                  Powered by Claude · Grounded in ITA
                 </p>
               </div>
             </div>
@@ -112,10 +112,10 @@ export default function AssistantPage() {
                     <Bot size={28} className="text-navy/40" />
                   </div>
                   <h2 className="font-display font-semibold text-navy mb-2">
-                    Ask anything about Namibian tax
+                    Ask anything about tax
                   </h2>
                   <p className="text-slate-400 text-sm max-w-sm mx-auto mb-8">
-                    I'm grounded in the Namibian Income Tax Act and NamRA procedures.
+                    I'm grounded in the Income Tax Act and tax authority procedures.
                     My answers are informational — always verify with a registered tax practitioner.
                   </p>
 
@@ -169,7 +169,7 @@ export default function AssistantPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask about Namibian tax law…"
+                  placeholder="Ask about tax law…"
                   rows={1}
                   className="input resize-none pr-12 py-3 leading-relaxed"
                   style={{ minHeight: '46px', maxHeight: '120px' }}

@@ -12,7 +12,11 @@ import BillingPage from './features/billing/BillingPage'
 import TrialBalancePage from './features/trial-balance/TrialBalancePage'
 import ItasPreFillPage from './features/returns/ItasPreFillPage'
 import AdminUsersPage from './features/admin/AdminUsersPage'
-import AdminSubscriptionsPage from "./features/admin/AdminSubscriptionsPage.tsx";
+import ProfilePage from './features/profile/ProfilePage'
+import PractitionerClientsPage from './features/practitioner/PractitionerClientsPage'
+import PrivacyPolicyPage from './features/legal/PrivacyPolicyPage'
+import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
+import ResetPasswordPage from './features/auth/ResetPasswordPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -27,6 +31,9 @@ function RequireGuest({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <Routes>
+      {/* Public routes */}
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
+
       {/* Guest routes */}
       <Route path="/login" element={
         <RequireGuest><LoginPage /></RequireGuest>
@@ -34,6 +41,10 @@ export default function App() {
       <Route path="/register" element={
         <RequireGuest><RegisterPage /></RequireGuest>
       } />
+      <Route path="/forgot-password" element={
+        <RequireGuest><ForgotPasswordPage /></RequireGuest>
+      } />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       {/* Authenticated routes — inside AppShell (sidebar layout) */}
       <Route path="/" element={
@@ -48,8 +59,9 @@ export default function App() {
         <Route path="assistant"     element={<AssistantPage />} />
         <Route path="trial-balance" element={<TrialBalancePage />} />
         <Route path="billing"       element={<BillingPage />} />
-          <Route path="/admin/users"         element={<AdminUsersPage />} />
-          <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
+        <Route path="profile"       element={<ProfilePage />} />
+          <Route path="/admin/users"           element={<AdminUsersPage />} />
+          <Route path="practitioner/clients"  element={<PractitionerClientsPage />} />
       </Route>
 
       {/* Fallback */}

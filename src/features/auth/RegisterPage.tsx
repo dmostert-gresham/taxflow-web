@@ -19,9 +19,10 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     fullName: '', email: '', password: '', role: 'INDIVIDUAL', tin: '',
   })
-  const [showPass, setShowPass] = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [showPass, setShowPass]         = useState(false)
+  const [loading, setLoading]           = useState(false)
+  const [error, setError]               = useState('')
+  const [privacyConsent, setPrivacyConsent] = useState(false)
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((f) => ({ ...f, [field]: e.target.value }))
@@ -36,12 +37,16 @@ export default function RegisterPage() {
       setError('Taxpayer Identification Number must be exactly 8 digits.')
       return
     }
+    if (!privacyConsent) {
+      setError('You must agree to the Privacy Policy to create an account.')
+      return
+    }
     setLoading(true)
     setError('')
     try {
       const res = await api.post<ApiResponse<AuthResponse>>('/auth/register', form)
-      const { token, userId, email, fullName, role, tin, isBeta } = res.data.data
-      login(token, { id: userId, email, fullName, role, tin, isBeta })
+      const { token, userId, email, fullName, role, tin } = res.data.data
+      login(token, { id: userId, email, fullName, role, tin })
       toast.success('Account created!')
       navigate('/dashboard')
     } catch (err) {
@@ -58,13 +63,13 @@ export default function RegisterPage() {
             <div className="w-8 h-8 bg-navy rounded-lg flex items-center justify-center">
               <TrendingUp size={16} className="text-teal" />
             </div>
-            <span className="font-display font-bold text-navy">TaxFlow.na</span>
+            <span className="font-display font-bold text-navy">TaxFuse</span>
           </div>
 
           <div className="mb-8">
             <h2 className="font-display text-2xl font-bold text-navy">Create account</h2>
             <p className="text-slate-500 mt-1 text-sm">
-              Start managing your Namibian taxes smarter
+              Start managing your taxes smarter
             </p>
           </div>
 
@@ -74,7 +79,7 @@ export default function RegisterPage() {
               <input
                   type="text"
                   className="input"
-                  placeholder="John Namibian"
+                  placeholder="John Smith"
                   value={form.fullName}
                   onChange={set('fullName')}
                   required
@@ -86,7 +91,7 @@ export default function RegisterPage() {
               <input
                   type="email"
                   className="input"
-                  placeholder="you@example.na"
+                  placeholder="you@example.com"
                   value={form.email}
                   onChange={set('email')}
                   required
@@ -146,8 +151,25 @@ export default function RegisterPage() {
                   inputMode="numeric"
               />
               <p className="text-xs text-slate-400 mt-1">
-                Your 8-digit Namibian TIN — found on your NAMRA correspondence
+                Your 8-digit TIN — found on your tax authority correspondence
               </p>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <input
+                  id="privacy-consent"
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-navy accent-navy cursor-pointer"
+                  checked={privacyConsent}
+                  onChange={(e) => setPrivacyConsent(e.target.checked)}
+              />
+              <label htmlFor="privacy-consent" className="text-sm text-slate-600 cursor-pointer">
+                I have read and agree to the{' '}
+                <Link to="/privacy" target="_blank" className="text-navy font-medium hover:underline">
+                  Privacy Policy
+                </Link>
+                . I consent to TaxFuse processing my personal information to provide tax services.
+              </label>
             </div>
 
             {error && (

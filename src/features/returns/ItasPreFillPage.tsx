@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Shield, Eye, EyeOff, Loader2, CheckCircle2, ExternalLink } from 'lucide-react'
 import { apiLong, extractErrorMessage } from '../../api/client'
+import { useAuthStore } from '../../stores/authStore'
 import type { ItasPreFillResponse } from '../../types'
 
 type AccommodationType = 'OWN' | 'RENT' | 'EMPLOYER' | ''
@@ -9,8 +10,9 @@ type AccommodationType = 'OWN' | 'RENT' | 'EMPLOYER' | ''
 export default function ItasPreFillPage() {
   const [searchParams]  = useSearchParams()
   const taxYearInt      = parseInt(searchParams.get('taxYear') ?? '2025')
+  const user            = useAuthStore((s) => s.user)
 
-  const [tin, setTin]         = useState('')
+  const [tin, setTin]         = useState(user?.tin ?? '')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
@@ -76,7 +78,7 @@ export default function ItasPreFillPage() {
                 Your credentials are secure
               </div>
               <div className="text-xs text-blue-600 mt-0.5 leading-relaxed">
-                TaxFlow uses your ITAS credentials only to fill in the form on your behalf.
+                TaxFuse uses your ITAS credentials only to fill in the form on your behalf.
                 They are never stored, logged, or shared. You review and submit yourself.
               </div>
             </div>
@@ -148,7 +150,7 @@ export default function ItasPreFillPage() {
                   ))}
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Optional — TaxFlow will fill Schedule 24 if provided.
+                  Optional — TaxFuse will fill Schedule 24 if provided.
                 </p>
               </div>
 
@@ -186,7 +188,7 @@ export default function ItasPreFillPage() {
                         <input
                           type="text"
                           className="input"
-                          placeholder="Leave blank if unknown — TaxFlow will use 0"
+                          placeholder="Leave blank if unknown — TaxFuse will use 0"
                           value={ownerTin}
                           onChange={(e) => setOwnerTin(e.target.value.replace(/\D/g, ''))}
                           maxLength={11}
@@ -237,7 +239,7 @@ export default function ItasPreFillPage() {
 
           {/* What gets filled */}
           <div className="card p-5">
-            <h2 className="section-title">What TaxFlow will fill in</h2>
+            <h2 className="section-title">What TaxFuse will fill in</h2>
             <ul className="space-y-2">
               {[
                 'Schedule 3 — Revenue code, salary, employer TIN, employment period',
@@ -320,7 +322,7 @@ export default function ItasPreFillPage() {
           <div className="flex gap-3">
             <button
               onClick={() => {
-                setResult(null); setTin('');
+                setResult(null); setTin(user?.tin ?? '');
                 setAccommodationType(''); setOwnerName(''); setOwnerAddress('');
                 setOwnerTin(''); setOwnerIdOrRegNo('');
               }}

@@ -4,13 +4,16 @@
 
 @layer base {
   :root {
-    --navy:      #1B3A5C;
-    --navy-light: #2A5280;
-    --teal:      #00C896;
-    --teal-light: #00E0AA;
-    --coral:     #FF6B35;
-    --surface:   #F5F7FA;
-    --border:    #E2E8F0;
+    --navy:       #0D1B2A;
+    --navy-light: #1A3252;
+    --blue:       #1565C0;
+    --blue-light: #2979D4;
+    --teal:       #00C8EE;
+    --teal-light: #33D6F5;
+    --coral:      #FF9500;
+    --surface:    #F5F7FA;
+    --border:     #E2E8F0;
+    --brand-gradient: linear-gradient(135deg, #1565C0 0%, #00C8EE 100%);
   }
 
   html { font-size: 22px; }
@@ -33,10 +36,10 @@
   }
 
   .btn-primary {
-    @apply bg-navy text-white font-medium px-4 py-2.5 rounded-lg
-           hover:bg-navy-light transition-colors duration-150
+    @apply bg-blue text-white font-medium px-4 py-2.5 rounded-lg
+           hover:bg-blue-light transition-colors duration-150
            disabled:opacity-50 disabled:cursor-not-allowed
-           focus:outline-none focus:ring-2 focus:ring-navy/30;
+           focus:outline-none focus:ring-2 focus:ring-blue/30;
   }
 
   .btn-teal {
@@ -60,7 +63,7 @@
   .input {
     @apply w-full px-3.5 py-2.5 rounded-lg border border-slate-200
            text-navy placeholder-slate-400
-           focus:outline-none focus:ring-2 focus:ring-navy/20 focus:border-navy/40
+           focus:outline-none focus:ring-2 focus:ring-blue/20 focus:border-blue/40
            transition duration-150;
   }
 
@@ -100,7 +103,7 @@
   }
 
   .sidebar-item.active {
-    @apply bg-navy/8 text-navy;
+    @apply bg-blue/8 text-blue;
   }
 
   .page-header {
@@ -148,8 +151,20 @@
 }
 
 @layer utilities {
-  .bg-navy\/8 { background-color: rgb(27 58 92 / 0.08); }
+  .bg-navy\/8 { background-color: rgb(13 27 42 / 0.08); }
+  .bg-blue\/8 { background-color: rgb(21 101 192 / 0.08); }
   .text-balance { text-wrap: balance; }
+
+  .brand-gradient {
+    background: var(--brand-gradient);
+  }
+
+  .brand-gradient-text {
+    background: var(--brand-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 
   /* Fade-in animation */
   .animate-fade-in {

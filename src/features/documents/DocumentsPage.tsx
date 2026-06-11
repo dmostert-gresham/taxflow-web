@@ -1,24 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Upload, Shield, CheckCircle2, AlertCircle,
-  RefreshCw, Clock, Save, Eye,
+  RefreshCw, Clock, Save, Eye, Trash2,
 } from 'lucide-react'
 import { api, extractErrorMessage } from '../../api/client'
-import type { ApiResponse, Paye5Result } from '../../types'
+import type { ApiResponse, Paye5Result, TaxCertListResult, TaxCertItem, TaxCertUploadResult } from '../../types'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 const TAX_YEARS = ['2025/26', '2024/25', '2023/24', '2022/23']
-
-const OTHER_DOCS = [
-  { emoji: '🧾', title: 'Receipts & Invoices',   desc: 'Upload expense receipts' },
-  { emoji: '🏥', title: 'Medical Certificates',   desc: 'Medical aid statements' },
-  { emoji: '🏦', title: 'Pension Certificates',   desc: 'Retirement fund statements' },
-  { emoji: '📚', title: 'Study Loan Statements',  desc: 'Interest certificates' },
-  { emoji: '❤️', title: 'Donation Receipts',      desc: 'Approved charity receipts' },
-]
 
 interface EditableValues {
   grossIncome:          string
@@ -26,6 +17,11 @@ interface EditableValues {
   pensionContributions: string
   medicalContributions: string
   employerTin:          string
+}
+
+interface CertEdit {
+  amount: string
+  name:   string
 }
 
 const EMPTY_VALUES: EditableValues = {
@@ -52,18 +48,20 @@ function parseDecimal(val: string): number | null {
 }
 
 export default function DocumentsPage() {
-  const navigate     = useNavigate()
   const queryClient  = useQueryClient()
   const fileRef      = useRef<HTMLInputElement>(null)
 
-  const [taxYear, setTaxYear]         = useState(TAX_YEARS[0])
-  const [uploading, setUploading]     = useState(false)
-  const [saving, setSaving]           = useState(false)
+  const [taxYear, setTaxYear]           = useState(TAX_YEARS[0])
+  const [uploading, setUploading]       = useState(false)
+  const [saving, setSaving]             = useState(false)
   const [hasOcrResult, setHasOcrResult] = useState(false)
-  const [error, setError]             = useState('')
-  const [values, setValues]           = useState<EditableValues>(EMPTY_VALUES)
+  const [error, setError]               = useState('')
+  const [values, setValues]             = useState<EditableValues>(EMPTY_VALUES)
 
-  // Load previously saved PAYE5 data for the selected tax year
+  // Pending cert edits lifted here so a single Save covers all sections
+  const [retirementEdits, setRetirementEdits] = useState<Map<number, CertEdit>>(new Map())
+  const [studyEdits, setStudyEdits]           = useState<Map<number, CertEdit>>(new Map())
+
   const { data: saved } = useQuery({
     queryKey: ['paye5', taxYear],
     queryFn: async () => {
@@ -74,7 +72,6 @@ export default function DocumentsPage() {
     },
   })
 
-  // When saved data loads (or year changes), populate the form — but only if no fresh OCR result
   useEffect(() => {
     if (!hasOcrResult && saved?.found) {
       setValues(toEditable(saved))
@@ -85,20 +82,19 @@ export default function DocumentsPage() {
     setTaxYear(year)
     setHasOcrResult(false)
     setValues(EMPTY_VALUES)
+    setRetirementEdits(new Map())
+    setStudyEdits(new Map())
     setError('')
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     setUploading(true)
     setError('')
-
     const formData = new FormData()
     formData.append('file', file)
     formData.append('taxYear', taxYear)
-
     try {
       const res = await api.post<ApiResponse<Paye5Result>>('/documents/paye5', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -123,33 +119,48 @@ export default function DocumentsPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.put('/documents/paye5', {
-        taxYear,
-        grossIncome:          parseDecimal(values.grossIncome),
-        payeDeducted:         parseDecimal(values.payeDeducted),
-        pensionContributions: parseDecimal(values.pensionContributions),
-        medicalContributions: parseDecimal(values.medicalContributions),
-        employerTin:          values.employerTin.trim() || undefined,
-      })
-      toast.success('PAYE5 saved')
-      setHasOcrResult(false)
-      queryClient.invalidateQueries({ queryKey: ['paye5', taxYear] })
+      const hasPaye5 = Object.values(values).some(v => v !== '')
+      if (hasPaye5 || hasOcrResult) {
+        await api.put('/documents/paye5', {
+          taxYear,
+          grossIncome:          parseDecimal(values.grossIncome),
+          payeDeducted:         parseDecimal(values.payeDeducted),
+          pensionContributions: parseDecimal(values.pensionContributions),
+          medicalContributions: parseDecimal(values.medicalContributions),
+          employerTin:          values.employerTin.trim() || undefined,
+        })
+        queryClient.invalidateQueries({ queryKey: ['paye5', taxYear] })
+        setHasOcrResult(false)
+      }
+
+      for (const [id, edit] of retirementEdits) {
+        await api.put(`/documents/retirement-fund/${id}`, {
+          amount: parseDecimal(edit.amount),
+          name:   edit.name.trim() || undefined,
+        })
+      }
+      if (retirementEdits.size > 0) {
+        queryClient.invalidateQueries({ queryKey: ['cert-retirement-fund', taxYear] })
+        setRetirementEdits(new Map())
+      }
+
+      for (const [id, edit] of studyEdits) {
+        await api.put(`/documents/study-policy/${id}`, {
+          amount: parseDecimal(edit.amount),
+          name:   edit.name.trim() || undefined,
+        })
+      }
+      if (studyEdits.size > 0) {
+        queryClient.invalidateQueries({ queryKey: ['cert-study-policy', taxYear] })
+        setStudyEdits(new Map())
+      }
+
+      toast.success('Documents saved')
     } catch (err) {
       toast.error(extractErrorMessage(err))
     } finally {
       setSaving(false)
     }
-  }
-
-  const handlePrefill = () => {
-    const params = new URLSearchParams({ taxYear })
-    const gross   = parseDecimal(values.grossIncome)
-    const paye    = parseDecimal(values.payeDeducted)
-    const pension = parseDecimal(values.pensionContributions)
-    if (gross   != null) params.set('grossIncome', String(gross))
-    if (paye    != null) params.set('paye',         String(paye))
-    if (pension != null) params.set('pension',      String(pension))
-    navigate(`/returns?${params}`)
   }
 
   const handleQuickView = async () => {
@@ -158,112 +169,132 @@ export default function DocumentsPage() {
         `/documents/paye5/file?taxYear=${encodeURIComponent(taxYear)}`,
         { responseType: 'blob' }
       )
-      const url = URL.createObjectURL(res.data)
-      window.open(url, '_blank', 'noopener')
+      window.open(URL.createObjectURL(res.data), '_blank', 'noopener')
     } catch {
       toast.error('Could not load document')
     }
   }
 
-  const hasValues = Object.values(values).some((v) => v !== '')
+  const setCertEdit = (
+    setter: React.Dispatch<React.SetStateAction<Map<number, CertEdit>>>
+  ) => (id: number, field: 'amount' | 'name', value: string) => {
+    setter(prev => {
+      const next    = new Map(prev)
+      const current = next.get(id) ?? { amount: '', name: '' }
+      next.set(id, { ...current, [field]: value })
+      return next
+    })
+  }
+
+  const removeCertEdit = (
+    setter: React.Dispatch<React.SetStateAction<Map<number, CertEdit>>>
+  ) => (id: number) => {
+    setter(prev => { const next = new Map(prev); next.delete(id); return next })
+  }
+
+  const hasValues = Object.values(values).some(v => v !== '')
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="page-title">Documents</h1>
-        <p className="page-subtitle">Upload your PAYE5 and other tax certificates</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="page-title">Documents</h1>
+          <p className="page-subtitle">Upload your tax certificates — TaxFuse extracts the figures via OCR</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={taxYear}
+            onChange={(e) => handleTaxYearChange(e.target.value)}
+            className="input w-auto text-sm"
+          >
+            {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="btn-teal flex items-center gap-2"
+          >
+            {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+            Save
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left — PAYE5 upload */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Privacy notice */}
-          <div className="bg-teal/5 border border-teal/20 rounded-xl p-4 flex gap-3">
-            <Shield size={16} className="text-teal shrink-0 mt-0.5" />
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Documents are processed offline on our secure server. Your files are
-              never sent to external AI services.
-            </p>
-          </div>
+      {/* Privacy notice */}
+      <div className="bg-teal/5 border border-teal/20 rounded-xl p-4 flex gap-3">
+        <Shield size={16} className="text-teal shrink-0 mt-0.5" />
+        <p className="text-sm text-slate-600 leading-relaxed">
+          Documents are processed offline on our secure server. Your files are
+          never sent to external AI services.
+        </p>
+      </div>
 
-          {/* Tax year + upload */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="section-title mb-0">PAYE5 Certificate</h2>
-              <select
-                value={taxYear}
-                onChange={(e) => handleTaxYearChange(e.target.value)}
-                className="input w-auto text-sm"
-              >
-                {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
+      <div className="space-y-5">
+        {/* PAYE5 — upload + values in one card */}
+        <div className="card p-5">
+          <h2 className="section-title mb-1">PAYE5 Certificate</h2>
+          <p className="text-sm text-slate-500 mb-4">
+            Upload your PAYE5 certificate. We'll extract the figures — you can
+            correct anything before saving.
+          </p>
 
-            <p className="text-sm text-slate-500 mb-4">
-              Upload your PAYE5 certificate. We'll extract the figures — you can
-              correct anything before saving.
-            </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.pdf"
+            className="hidden"
+            onChange={handleUpload}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className={clsx(
+              'w-full border-2 border-dashed rounded-xl p-4 text-center transition-colors',
+              uploading
+                ? 'border-navy/20 bg-navy/3 cursor-wait'
+                : 'border-slate-200 hover:border-navy/30 hover:bg-slate-50 cursor-pointer'
+            )}
+          >
+            {uploading ? (
+              <div className="flex items-center justify-center gap-2">
+                <RefreshCw size={16} className="text-navy animate-spin" />
+                <span className="text-sm text-slate-500">Extracting data…</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2">
+                <Upload size={16} className="text-slate-400" />
+                <span className="text-sm font-medium text-slate-600">
+                  {hasValues ? 'Re-upload PAYE5' : 'Upload PAYE5 certificate'}
+                </span>
+                <span className="text-xs text-slate-400">PNG, JPG or PDF</span>
+              </div>
+            )}
+          </button>
 
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".png,.jpg,.jpeg,.pdf"
-              className="hidden"
-              onChange={handleUpload}
-            />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className={clsx(
-                'w-full border-2 border-dashed rounded-xl p-6 text-center transition-colors',
-                uploading
-                  ? 'border-navy/20 bg-navy/3 cursor-wait'
-                  : 'border-slate-200 hover:border-navy/30 hover:bg-slate-50 cursor-pointer'
-              )}
-            >
-              {uploading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <RefreshCw size={22} className="text-navy animate-spin" />
-                  <span className="text-sm text-slate-500">Extracting data…</span>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <Upload size={22} className="text-slate-400" />
-                  <span className="text-sm font-medium text-slate-600">
-                    {hasValues ? 'Re-upload PAYE5' : 'Click to upload PAYE5'}
-                  </span>
-                  <span className="text-xs text-slate-400">PNG, JPG or PDF</span>
-                </div>
-              )}
-            </button>
-          </div>
-
-          {/* Error */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3">
-              <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+            <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 flex gap-2">
+              <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
               <p className="text-sm text-red-600">{error}</p>
             </div>
           )}
 
-          {/* Editable values form — shown after OCR or when saved data exists */}
           {(hasValues || hasOcrResult) && (
-            <div className="card p-5">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="section-title mb-0 flex items-center gap-2">
+            <div className="border-t border-slate-100 mt-4 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
                   {hasOcrResult ? (
                     <>
-                      <CheckCircle2 size={15} className="text-teal" />
+                      <CheckCircle2 size={14} className="text-teal" />
                       Detected values — correct if needed
                     </>
                   ) : (
                     <>
-                      <Clock size={15} className="text-slate-400" />
-                      Saved PAYE5
+                      <Clock size={14} className="text-slate-400" />
+                      Saved values
                     </>
                   )}
-                </h2>
+                </span>
                 {!hasOcrResult && saved?.uploadedAt && (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-400">
@@ -290,7 +321,7 @@ export default function DocumentsPage() {
                 </p>
               )}
 
-              <div className="space-y-3 mt-4">
+              <div className="space-y-3">
                 {([
                   { key: 'grossIncome',          label: 'Gross Income' },
                   { key: 'payeDeducted',          label: 'PAYE Deducted' },
@@ -318,7 +349,6 @@ export default function DocumentsPage() {
                     </div>
                   </div>
                 ))}
-                {/* Employer TIN — text field, no currency prefix */}
                 <div className="flex items-center gap-3">
                   <label className="text-sm text-slate-600 w-48 shrink-0">Employer TIN</label>
                   <input
@@ -333,57 +363,287 @@ export default function DocumentsPage() {
                   />
                 </div>
               </div>
-
-              <div className="flex gap-3 mt-5">
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="btn-teal flex items-center gap-2 flex-1"
-                >
-                  {saving ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  Save
-                </button>
-                <button
-                  onClick={handlePrefill}
-                  className="btn-outline flex-1"
-                >
-                  Pre-fill Tax Return
-                </button>
-              </div>
             </div>
           )}
 
-          {/* No data yet */}
           {!hasValues && !hasOcrResult && !uploading && (
-            <p className="text-sm text-slate-400 text-center py-2">
-              No PAYE5 saved for {taxYear}. Upload one above.
+            <p className="text-sm text-slate-400 text-center py-2 mt-3">
+              No PAYE5 saved for {taxYear}.
             </p>
           )}
         </div>
 
-        {/* Right — other documents */}
-        <div className="card p-5">
-          <h2 className="section-title">Other documents</h2>
-          <p className="text-xs text-slate-400 mb-4">Coming soon</p>
-          <div className="space-y-3">
-            {OTHER_DOCS.map(({ emoji, title, desc }) => (
-              <div key={title}
-                   className="flex items-center gap-3 p-3 rounded-lg bg-slate-50">
-                <span className="text-xl">{emoji}</span>
-                <div>
-                  <div className="text-sm font-medium text-navy">{title}</div>
-                  <div className="text-xs text-slate-400">{desc}</div>
-                </div>
-                <span className="ml-auto badge-gray text-xs">Soon</span>
-              </div>
-            ))}
+        <SimpleCertCard
+          title="Certificate i.r.o Retirement Fund"
+          apiPath="retirement-fund"
+          queryKey="cert-retirement-fund"
+          taxYear={taxYear}
+          edits={retirementEdits}
+          onEditChange={setCertEdit(setRetirementEdits)}
+          onDeleted={removeCertEdit(setRetirementEdits)}
+        />
+        <SimpleCertCard
+          title="Certificate i.r.o Study Policy"
+          apiPath="study-policy"
+          queryKey="cert-study-policy"
+          taxYear={taxYear}
+          edits={studyEdits}
+          onEditChange={setCertEdit(setStudyEdits)}
+          onDeleted={removeCertEdit(setStudyEdits)}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── SimpleCertCard ────────────────────────────────────────────────────────
+
+interface SimpleCertCardProps {
+  title:        string
+  apiPath:      string
+  queryKey:     string
+  taxYear:      string
+  edits:        Map<number, CertEdit>
+  onEditChange: (id: number, field: 'amount' | 'name', value: string) => void
+  onDeleted:    (id: number) => void
+}
+
+function SimpleCertCard({
+  title, apiPath, queryKey, taxYear, edits, onEditChange, onDeleted,
+}: SimpleCertCardProps) {
+  const queryClient = useQueryClient()
+  const fileRef     = useRef<HTMLInputElement>(null)
+
+  const [uploading, setUploading] = useState(false)
+  const [error, setError]         = useState('')
+
+  const { data } = useQuery({
+    queryKey: [queryKey, taxYear],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<TaxCertListResult>>(
+        `/documents/${apiPath}?taxYear=${encodeURIComponent(taxYear)}`
+      )
+      return res.data.data
+    },
+  })
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setError('')
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('taxYear', taxYear)
+    try {
+      const res = await api.post<ApiResponse<TaxCertUploadResult>>(
+        `/documents/${apiPath}`, formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      )
+      const result = res.data.data
+      if (result.success) {
+        toast.success(result.message)
+        queryClient.invalidateQueries({ queryKey: [queryKey, taxYear] })
+      } else {
+        setError(result.message)
+      }
+    } catch (err) {
+      setError(extractErrorMessage(err))
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const items = data?.items ?? []
+
+  // Live total reflects any pending edits
+  const liveTotal = items.reduce((sum, item) => {
+    const edit = edits.get(item.id)
+    const raw  = edit?.amount ?? (item.amount != null ? String(item.amount) : '0')
+    return sum + (parseFloat(raw.replace(/,/g, '')) || 0)
+  }, 0)
+
+  return (
+    <div className="card p-5 space-y-4">
+      <h2 className="section-title mb-0 text-sm leading-snug">{title}</h2>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".png,.jpg,.jpeg,.pdf"
+        className="hidden"
+        onChange={handleUpload}
+      />
+
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className={clsx(
+          'w-full border-2 border-dashed rounded-xl p-3 text-center transition-colors',
+          uploading
+            ? 'border-navy/20 bg-navy/3 cursor-wait'
+            : 'border-slate-200 hover:border-navy/30 hover:bg-slate-50 cursor-pointer'
+        )}
+      >
+        {uploading ? (
+          <div className="flex items-center justify-center gap-2">
+            <RefreshCw size={14} className="text-navy animate-spin" />
+            <span className="text-xs text-slate-500">Processing…</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-2">
+            <Upload size={14} className="text-slate-400" />
+            <span className="text-xs font-medium text-slate-600">Upload certificate</span>
+            <span className="text-[11px] text-slate-400">PNG, JPG, PDF</span>
+          </div>
+        )}
+      </button>
+
+      {error && (
+        <div className="flex gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+          <AlertCircle size={13} className="text-red-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-red-600">{error}</p>
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div className="space-y-2">
+          {items.map((item) => {
+            const edit   = edits.get(item.id)
+            const amount = edit?.amount ?? (item.amount != null ? String(item.amount) : '')
+            const name   = edit?.name   ?? (item.name ?? '')
+            return (
+              <CertRow
+                key={item.id}
+                item={item}
+                apiPath={apiPath}
+                queryKey={queryKey}
+                taxYear={taxYear}
+                amount={amount}
+                name={name}
+                onAmountChange={(val) => onEditChange(item.id, 'amount', val)}
+                onNameChange={(val)   => onEditChange(item.id, 'name',   val)}
+                onDeleted={() => onDeleted(item.id)}
+              />
+            )
+          })}
+
+          <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
+            <span className="text-xs font-medium text-slate-500">Total</span>
+            <span className="text-sm font-semibold text-navy font-mono">
+              N$ {liveTotal.toLocaleString('en-NA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
         </div>
+      )}
+
+      {items.length === 0 && !uploading && (
+        <p className="text-xs text-slate-400 text-center py-1">
+          No certificates saved for {taxYear}.
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ── CertRow ───────────────────────────────────────────────────────────────
+
+interface CertRowProps {
+  item:           TaxCertItem
+  apiPath:        string
+  queryKey:       string
+  taxYear:        string
+  amount:         string
+  name:           string
+  onAmountChange: (value: string) => void
+  onNameChange:   (value: string) => void
+  onDeleted:      () => void
+}
+
+function CertRow({
+  item, apiPath, queryKey, taxYear,
+  amount, name, onAmountChange, onNameChange, onDeleted,
+}: CertRowProps) {
+  const queryClient = useQueryClient()
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await api.delete(`/documents/${apiPath}/${item.id}`)
+      toast.success('Deleted')
+      onDeleted()
+      queryClient.invalidateQueries({ queryKey: [queryKey, taxYear] })
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
+      setDeleting(false)
+    }
+  }
+
+  const handleView = async () => {
+    try {
+      const res = await api.get<Blob>(
+        `/documents/${apiPath}/${item.id}/file`,
+        { responseType: 'blob' }
+      )
+      window.open(URL.createObjectURL(res.data), '_blank', 'noopener')
+    } catch {
+      toast.error('Could not load document')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-2.5 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          placeholder="Policy label (optional)"
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          className="input text-xs py-1.5 flex-1 min-w-0"
+        />
+        {item.hasFile && (
+          <button
+            onClick={handleView}
+            className="btn-ghost p-1.5 text-navy shrink-0"
+            title="View document"
+          >
+            <Eye size={12} />
+          </button>
+        )}
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="btn-ghost p-1.5 text-red-400 hover:text-red-600 shrink-0"
+          title="Delete"
+        >
+          {deleting
+            ? <RefreshCw size={12} className="animate-spin" />
+            : <Trash2 size={12} />}
+        </button>
       </div>
+
+      <div className="relative">
+        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">
+          N$
+        </span>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="0.00"
+          value={amount}
+          onChange={(e) => onAmountChange(e.target.value)}
+          className="input pl-8 font-mono text-xs w-full py-1.5"
+        />
+      </div>
+
+      {item.uploadedAt && (
+        <p className="text-[11px] text-slate-400">
+          Saved {new Date(item.uploadedAt).toLocaleDateString('en-NA')}
+        </p>
+      )}
     </div>
   )
 }

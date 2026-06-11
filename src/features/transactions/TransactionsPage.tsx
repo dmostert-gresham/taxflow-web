@@ -4,9 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Upload, Zap, RefreshCw, AlertCircle,
   CheckCircle2, Clock, TrendingUp, TrendingDown, Pencil, X, Check,
+  Filter, ChevronDown, ChevronRight, Trash2,
 } from 'lucide-react'
 import {
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, Transaction } from '../../types'
@@ -64,6 +65,17 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; emoji: str
   OTHER:               { label: 'Other',                 color: 'badge-orange', emoji: '❓', hex: '#FF6B35', group: 'Other' },
 }
 
+// Categories that TaxReturnService actually uses in the calculation
+const TAX_RELEVANT_CATEGORIES = new Set([
+  'SALARY', 'COMMISSION', 'FREELANCE_INCOME', 'RENTAL_INCOME',
+  'INTEREST_INCOME', 'BUSINESS_INCOME', 'GRATUITY',
+  'ENTERTAINMENT_ALLOWANCE', 'VEHICLE_ALLOWANCE', 'SUBSISTENCE_ALLOWANCE', 'HOUSING_ALLOWANCE',
+  'PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY',
+  'STUDY_POLICY', 'STUDY_LOAN',
+  'MEDICAL', 'DONATIONS',
+  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS',
+])
+
 const ALL_CATEGORIES = Object.keys(CATEGORY_CONFIG)
 
 function CategoryBadge({ category }: { category?: string }) {
@@ -79,7 +91,6 @@ function CategoryPieChart({ transactions }: { transactions: Transaction[] }) {
 
   if (classified.length === 0) return null
 
-  // Group by category, sum absolute amounts
   const grouped = classified.reduce<Record<string, number>>((acc, tx) => {
     const cat = tx.category!
     acc[cat] = (acc[cat] ?? 0) + Math.abs(tx.amount)
@@ -94,7 +105,7 @@ function CategoryPieChart({ transactions }: { transactions: Transaction[] }) {
         hex: CATEGORY_CONFIG[cat]?.hex ?? '#94A3B8',
       }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10) // top 10 categories
+      .slice(0, 10)
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (!active || !payload?.length) return null
@@ -239,6 +250,176 @@ function CategoryCell({
   )
 }
 
+// ─── Transaction row with inline delete confirm ───────────────────────────────
+
+function TransactionRow({
+  tx,
+  onSave,
+  onDelete,
+}: {
+  tx: Transaction
+  onSave: (id: number, category: string) => Promise<void>
+  onDelete: (id: number) => Promise<void>
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting,   setDeleting]   = useState(false)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await onDelete(tx.id)
+    } finally {
+      setDeleting(false)
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <tr className="hover:bg-slate-50 transition-colors group">
+      <td className="table-cell text-slate-500 text-xs whitespace-nowrap">
+        {new Date(tx.transactionDate).toLocaleDateString('en-NA', {
+          day: '2-digit', month: 'short', year: 'numeric',
+        })}
+      </td>
+      <td className="table-cell max-w-xs">
+        <span className="truncate block text-navy">{tx.description}</span>
+      </td>
+      <td className="table-cell">
+        <CategoryCell transaction={tx} onSave={onSave} />
+      </td>
+      <td className="table-cell text-right whitespace-nowrap">
+        <span className={clsx(
+          'font-mono text-sm font-medium',
+          tx.transactionType === 'CREDIT' ? 'text-teal-dark' : 'text-slate-700'
+        )}>
+          {tx.transactionType === 'CREDIT' ? '+' : '-'}
+          {formatNAD(Math.abs(tx.amount))}
+        </span>
+      </td>
+      <td className="table-cell">
+        {tx.transactionType === 'CREDIT' ? (
+          <span className="flex items-center gap-1 text-teal-dark text-xs">
+            <TrendingUp size={12} /> Credit
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-slate-400 text-xs">
+            <TrendingDown size={12} /> Debit
+          </span>
+        )}
+      </td>
+      <td className="table-cell w-px">
+        {confirming ? (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-slate-500 whitespace-nowrap">Delete?</span>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="w-6 h-6 rounded bg-coral text-white flex items-center
+                         justify-center hover:bg-red-600 transition-colors"
+            >
+              {deleting
+                ? <RefreshCw size={10} className="animate-spin" />
+                : <Check size={10} />}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="w-6 h-6 rounded bg-slate-100 text-slate-500 flex items-center
+                         justify-center hover:bg-slate-200 transition-colors"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            className="w-6 h-6 rounded text-slate-300 hover:text-coral hover:bg-red-50
+                       flex items-center justify-center opacity-0 group-hover:opacity-100
+                       transition-all"
+            title="Remove transaction"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+// ─── Year group section ───────────────────────────────────────────────────────
+
+function YearSection({
+  taxYear,
+  transactions,
+  onSave,
+  onDelete,
+}: {
+  taxYear: string
+  transactions: Transaction[]
+  onSave: (id: number, category: string) => Promise<void>
+  onDelete: (id: number) => Promise<void>
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setCollapsed((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3
+                   bg-slate-50 border-b border-slate-100 hover:bg-slate-100
+                   transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          {collapsed
+            ? <ChevronRight size={15} className="text-slate-400" />
+            : <ChevronDown  size={15} className="text-slate-400" />}
+          <span className="font-semibold text-navy text-sm">{taxYear}</span>
+          <span className="text-slate-400 text-xs">{transactions.length} transactions</span>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-slate-500">
+          <span className="text-teal-dark font-medium">
+            +{formatNAD(transactions
+                .filter((t) => t.transactionType === 'CREDIT')
+                .reduce((s, t) => s + Math.abs(t.amount), 0))}
+          </span>
+          <span className="text-slate-400">
+            -{formatNAD(transactions
+                .filter((t) => t.transactionType === 'DEBIT')
+                .reduce((s, t) => s + Math.abs(t.amount), 0))}
+          </span>
+        </div>
+      </button>
+
+      {!collapsed && (
+        <table className="w-full">
+          <thead>
+            <tr className="bg-white border-b border-slate-100">
+              <th className="table-header text-left">Date</th>
+              <th className="table-header text-left">Description</th>
+              <th className="table-header text-left">
+                Category
+                <span className="text-slate-300 font-normal ml-1.5 text-xs">hover to edit</span>
+              </th>
+              <th className="table-header text-right">Amount</th>
+              <th className="table-header text-left">Type</th>
+              <th className="table-header" />
+            </tr>
+          </thead>
+          <tbody>
+            {transactions.map((tx) => (
+              <TransactionRow
+                key={tx.id}
+                tx={tx}
+                onSave={onSave}
+                onDelete={onDelete}
+              />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TransactionsPage() {
@@ -246,6 +427,7 @@ export default function TransactionsPage() {
   const fileRef     = useRef<HTMLInputElement>(null)
 
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [taxOnly,    setTaxOnly]    = useState(false)
 
   const { data: transactions = [], isLoading } = useQuery({
     queryKey: ['transactions'],
@@ -289,8 +471,27 @@ export default function TransactionsPage() {
     toast.success('Category updated')
   }
 
+  const handleDelete = async (id: number) => {
+    await api.delete(`/statements/${id}`)
+    queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    toast.success('Transaction removed')
+  }
+
   const rawCount        = transactions.filter((t) => t.status === 'RAW').length
   const classifiedCount = transactions.filter((t) => t.status === 'CLASSIFIED').length
+
+  const displayed = taxOnly
+    ? transactions.filter((t) => t.category && TAX_RELEVANT_CATEGORIES.has(t.category))
+    : transactions
+
+  // Group by tax year, most recent first
+  const byYear = displayed.reduce<Record<string, Transaction[]>>((acc, tx) => {
+    const yr = tx.taxYear ?? 'Unknown'
+    if (!acc[yr]) acc[yr] = []
+    acc[yr].push(tx)
+    return acc
+  }, {})
+  const years = Object.keys(byYear).sort().reverse()
 
   return (
       <>
@@ -302,8 +503,8 @@ export default function TransactionsPage() {
         </div>
 
         {/* Pie chart */}
-        {transactions.length > 0 && (
-            <CategoryPieChart transactions={transactions} />
+        {displayed.length > 0 && (
+            <CategoryPieChart transactions={displayed} />
         )}
 
         {/* Action bar */}
@@ -328,6 +529,17 @@ export default function TransactionsPage() {
             {classifyMutation.isPending ? 'Classifying…' : 'Classify with AI'}
           </button>
 
+          <button
+              onClick={() => setTaxOnly((v) => !v)}
+              className={clsx(
+                'btn-outline flex items-center gap-2 text-sm transition-colors',
+                taxOnly && 'bg-navy/5 text-navy border-navy/30'
+              )}
+          >
+            <Filter size={15} />
+            {taxOnly ? 'Tax-relevant only' : 'All transactions'}
+          </button>
+
           <div className="flex items-center gap-4 ml-auto text-sm text-slate-500">
             {rawCount > 0 && (
                 <span className="flex items-center gap-1.5">
@@ -341,83 +553,44 @@ export default function TransactionsPage() {
                   {classifiedCount} classified
             </span>
             )}
-            <span>{transactions.length} total</span>
+            <span>{displayed.length}{taxOnly ? ` of ${transactions.length}` : ''} total</span>
           </div>
         </div>
 
-        {/* Table */}
-        <div className="card overflow-hidden">
-          {isLoading ? (
-              <div className="p-12 flex items-center justify-center">
-                <div className="w-6 h-6 border-2 border-navy/20 border-t-navy rounded-full animate-spin" />
-              </div>
-          ) : transactions.length === 0 ? (
-              <div className="p-12 text-center">
-                <AlertCircle size={32} className="text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-500 text-sm">No transactions yet</p>
-                <p className="text-slate-400 text-xs mt-1">
-                  Import a CSV from FNB or Bank Windhoek to get started
-                </p>
-              </div>
-          ) : (
-              <table className="w-full">
-                <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="table-header text-left">Date</th>
-                  <th className="table-header text-left">Description</th>
-                  <th className="table-header text-left">
-                    Category
-                    <span className="text-slate-300 font-normal ml-1.5 text-xs">
-                    hover to edit
-                  </span>
-                  </th>
-                  <th className="table-header text-right">Amount</th>
-                  <th className="table-header text-left">Type</th>
-                </tr>
-                </thead>
-                <tbody>
-                {transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="table-cell text-slate-500 text-xs whitespace-nowrap">
-                        {new Date(tx.transactionDate).toLocaleDateString('en-NA', {
-                          day: '2-digit', month: 'short', year: 'numeric',
-                        })}
-                      </td>
-                      <td className="table-cell max-w-xs">
-                        <span className="truncate block text-navy">{tx.description}</span>
-                      </td>
-                      <td className="table-cell">
-                        <CategoryCell
-                            transaction={tx}
-                            onSave={handleManualClassify}
-                        />
-                      </td>
-                      <td className="table-cell text-right whitespace-nowrap">
-                    <span className={clsx(
-                        'font-mono text-sm font-medium',
-                        tx.transactionType === 'CREDIT' ? 'text-teal-dark' : 'text-slate-700'
-                    )}>
-                      {tx.transactionType === 'CREDIT' ? '+' : '-'}
-                      {formatNAD(Math.abs(tx.amount))}
-                    </span>
-                      </td>
-                      <td className="table-cell">
-                        {tx.transactionType === 'CREDIT' ? (
-                            <span className="flex items-center gap-1 text-teal-dark text-xs">
-                        <TrendingUp size={12} /> Credit
-                      </span>
-                        ) : (
-                            <span className="flex items-center gap-1 text-slate-400 text-xs">
-                        <TrendingDown size={12} /> Debit
-                      </span>
-                        )}
-                      </td>
-                    </tr>
-                ))}
-                </tbody>
-              </table>
-          )}
-        </div>
+        {/* Transaction groups */}
+        {isLoading ? (
+          <div className="card p-12 flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-navy/20 border-t-navy rounded-full animate-spin" />
+          </div>
+        ) : transactions.length === 0 ? (
+          <div className="card p-12 text-center">
+            <AlertCircle size={32} className="text-slate-200 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">No transactions yet</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Import a CSV from FNB or Bank Windhoek to get started
+            </p>
+          </div>
+        ) : displayed.length === 0 ? (
+          <div className="card p-12 text-center">
+            <Filter size={32} className="text-slate-200 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">No tax-relevant transactions</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Classify transactions as income or deductions to see them here
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {years.map((yr) => (
+              <YearSection
+                key={yr}
+                taxYear={yr}
+                transactions={byYear[yr]}
+                onSave={handleManualClassify}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {importFile && (

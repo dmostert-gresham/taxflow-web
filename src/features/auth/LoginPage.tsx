@@ -27,8 +27,8 @@ export default function LoginPage() {
       const res = await api.post<ApiResponse<AuthResponse>>('/auth/login', {
         email, password,
       })
-      const { token, userId, email: userEmail, fullName, role, tin, isBeta } = res.data.data
-      login(token, { id: userId, email: userEmail, fullName, role, tin, isBeta })
+      const { token, userId, email: userEmail, fullName, role, tin } = res.data.data
+      login(token, { id: userId, email: userEmail, fullName, role, tin })
       toast.success(`Welcome back, ${fullName.split(' ')[0]}!`)
       navigate('/dashboard')
     } catch (err) {
@@ -48,9 +48,9 @@ export default function LoginPage() {
               <TrendingUp size={20} className="text-white" />
             </div>
             <div>
-              <div className="font-display font-bold text-white text-lg">TaxFlow.na</div>
+              <div className="font-display font-bold text-white text-lg">TaxFuse</div>
               <div className="text-teal/70 text-xs tracking-widest font-medium">
-                NAMIBIAN TAX MANAGEMENT
+                TAX MANAGEMENT
               </div>
             </div>
           </div>
@@ -58,7 +58,7 @@ export default function LoginPage() {
           <div>
             <h1 className="font-display text-4xl font-bold text-white leading-tight mb-4">
               Smart tax management<br />
-              for <span className="text-teal">Namibians</span>
+              for <span className="text-teal">everyone</span>
             </h1>
             <p className="text-slate-300 text-base leading-relaxed max-w-sm">
               Upload your bank statements, let AI classify your transactions, and
@@ -81,7 +81,7 @@ export default function LoginPage() {
           </div>
 
           <div className="text-slate-500 text-xs">
-            © {new Date().getFullYear()} TaxFlow.na — Built for Namibia
+            © {new Date().getFullYear()} TaxFuse
           </div>
         </div>
 
@@ -93,13 +93,13 @@ export default function LoginPage() {
               <div className="w-8 h-8 bg-navy rounded-lg flex items-center justify-center">
                 <TrendingUp size={16} className="text-teal" />
               </div>
-              <span className="font-display font-bold text-navy">TaxFlow.na</span>
+              <span className="font-display font-bold text-navy">TaxFuse</span>
             </div>
 
             <div className="mb-8">
               <h2 className="font-display text-2xl font-bold text-navy">Welcome back</h2>
               <p className="text-slate-500 mt-1 text-sm">
-                Sign in to your TaxFlow account
+                Sign in to your TaxFuse account
               </p>
             </div>
 
@@ -109,7 +109,7 @@ export default function LoginPage() {
                 <input
                     type="email"
                     className="input"
-                    placeholder="you@example.na"
+                    placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
@@ -138,6 +138,12 @@ export default function LoginPage() {
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Link to="/forgot-password" className="text-xs text-slate-500 hover:text-navy transition-colors">
+                  Forgot password?
+                </Link>
               </div>
 
               {error && (

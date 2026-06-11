@@ -4,9 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        navy:  { DEFAULT: '#1B3A5C', light: '#2A5280', dark: '#122740' },
-        teal:  { DEFAULT: '#00C896', light: '#00E0AA', dark: '#00A87E' },
-        coral: { DEFAULT: '#FF6B35', light: '#FF8555', dark: '#E05520' },
+        navy:  { DEFAULT: '#0D1B2A', light: '#1A3252', dark: '#060E18' },
+        blue:  { DEFAULT: '#1565C0', light: '#2979D4', dark: '#0D4FA3' },
+        teal:  { DEFAULT: '#00C8EE', light: '#33D6F5', dark: '#009DC0' },
+        coral: { DEFAULT: '#FF9500', light: '#FFAF3F', dark: '#D97A00' },
         slate: { DEFAULT: '#64748B', light: '#94A3B8', dark: '#475569' },
       },
       fontFamily: {

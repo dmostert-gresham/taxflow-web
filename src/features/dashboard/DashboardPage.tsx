@@ -7,13 +7,23 @@ import {
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
 import { useAuthStore } from '../../stores/authStore'
-import type { ApiResponse, TaxReturnModel } from '../../types'
+import type { ApiResponse, TaxReturnModel, Paye5Result } from '../../types'
 import clsx from 'clsx'
 
 type Plan = 'BASIC' | 'PROFESSIONAL' | 'BUSINESS' | 'PRACTITIONER'
 const PLAN_RANK: Record<Plan, number> = { BASIC: 0, PROFESSIONAL: 1, BUSINESS: 2, PRACTITIONER: 3 }
 
-const TAX_YEAR = '2024/25'
+// Tax year runs March 1 → last day of February.
+// March–December: the year that ended this past Feb = (year-1)/(year)
+// January–February: the year that ended last Feb    = (year-2)/(year-1)
+function currentTaxYear(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const startYear = now.getMonth() >= 2 ? year - 1 : year - 2
+  return `${startYear}/${String(startYear + 1).slice(2)}`
+}
+
+const TAX_YEAR = currentTaxYear()
 
 function greeting() {
   const h = new Date().getHours()
@@ -48,12 +58,48 @@ export default function DashboardPage() {
   const canAccess = (required: Plan) =>
     PLAN_RANK[activePlan] >= PLAN_RANK[required]
 
+  const { data: savedDeductions } = useQuery({
+    queryKey: ['deductions', TAX_YEAR],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<{
+        grossIncome: number
+        payeAlreadyPaid: number; pensionContributions: number
+        medicalExpenses: number; donations: number
+        studyLoanInterest: number; otherDeductions: number
+      }>>('/deductions', { params: { taxYear: TAX_YEAR } })
+      return res.data.data
+    },
+  })
+
+  const { data: paye5Data } = useQuery({
+    queryKey: ['paye5', TAX_YEAR],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<Paye5Result & { found: boolean }>>(
+        `/documents/paye5?taxYear=${encodeURIComponent(TAX_YEAR)}`
+      )
+      return res.data.data
+    },
+  })
+
+  const hasPaye5      = paye5Data?.found === true
+  const resolvedGross = hasPaye5 ? (paye5Data?.grossIncome          ?? 0) : (savedDeductions?.grossIncome          ?? 0)
+  const resolvedPaye  = hasPaye5 ? (paye5Data?.payeDeducted         ?? 0) : (savedDeductions?.payeAlreadyPaid      ?? 0)
+  const resolvedPension = hasPaye5 ? (paye5Data?.pensionContributions ?? 0) : (savedDeductions?.pensionContributions ?? 0)
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['tax-return', TAX_YEAR],
+    queryKey: ['tax-return', TAX_YEAR, resolvedGross, resolvedPaye, resolvedPension,
+               savedDeductions?.medicalExpenses, savedDeductions?.donations,
+               savedDeductions?.studyLoanInterest, savedDeductions?.otherDeductions],
     queryFn: async () => {
       const res = await api.post<ApiResponse<TaxReturnModel>>('/returns/calculate', {
         taxYear: TAX_YEAR,
-        payeAlreadyPaid: 0,
+        ...(resolvedGross > 0 ? { grossIncome: resolvedGross } : {}),
+        payeAlreadyPaid:           resolvedPaye,
+        pensionContributions:      resolvedPension,
+        medicalExpenses:           savedDeductions?.medicalExpenses   ?? 0,
+        donationsToApprovedBodies: savedDeductions?.donations         ?? 0,
+        studyLoanInterest:         savedDeductions?.studyLoanInterest ?? 0,
+        otherDeductions:           savedDeductions?.otherDeductions   ?? 0,
       })
       return res.data.data
     },
@@ -187,7 +233,7 @@ export default function DashboardPage() {
               to: '/assistant',
               icon: <MessageSquare size={20} className="text-coral" />,
               label: 'Ask AI Assistant',
-              desc: 'Namibian tax questions answered',
+              desc: 'Tax questions answered',
               bg: 'bg-coral/5 hover:bg-coral/10',
               requiredPlan: 'PROFESSIONAL' as Plan,
             },
