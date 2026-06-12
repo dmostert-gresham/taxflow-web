@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { CheckCircle2, Zap, Building2, Users, Star } from 'lucide-react'
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
-import type { ApiResponse, Subscription } from '../../types'
+import type { ApiResponse } from '../../types'
 import { useAuthStore } from '../../stores/authStore'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'

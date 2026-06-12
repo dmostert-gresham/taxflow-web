@@ -6,7 +6,6 @@ import { api, extractErrorMessage } from '../../api/client'
 import { useAuthStore } from '../../stores/authStore'
 import type { ApiResponse, ClientSummary, AuthResponse } from '../../types'
 import toast from 'react-hot-toast'
-import clsx from 'clsx'
 
 const ROLES = [
   { value: 'INDIVIDUAL', label: 'Individual Taxpayer' },
