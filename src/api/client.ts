@@ -1,7 +1,9 @@
 import axios from 'axios'
 
+const API_BASE = (import.meta.env.VITE_API_URL ?? '') + '/api'
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30_000,
 })
@@ -30,7 +32,7 @@ api.interceptors.response.use(
 
 // Long-timeout instance for Playwright operations (ITAS pre-fill can take 2+ minutes)
 export const apiLong = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
   timeout: 180_000,
 })
