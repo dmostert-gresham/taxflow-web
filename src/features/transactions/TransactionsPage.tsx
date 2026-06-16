@@ -437,6 +437,8 @@ export default function TransactionsPage() {
     },
   })
 
+  const [classifyTotal, setClassifyTotal] = useState(0)
+
   const classifyMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post<ApiResponse<{ classified: number }>>(
@@ -444,12 +446,26 @@ export default function TransactionsPage() {
       )
       return res.data.data
     },
+    onMutate: () => setClassifyTotal(rawCount),
     onSuccess: (data) => {
       toast.success(`${data.classified} transactions classified`)
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
     },
     onError: (err) => toast.error(extractErrorMessage(err)),
   })
+
+  const { data: pendingCount } = useQuery({
+    queryKey: ['classify-pending'],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<{ pending: number }>>('/statements/classify/pending')
+      return res.data.data.pending
+    },
+    refetchInterval: classifyMutation.isPending ? 2000 : false,
+    enabled: classifyMutation.isPending,
+  })
+
+  const classifyDone     = classifyTotal > 0 ? classifyTotal - (pendingCount ?? classifyTotal) : 0
+  const classifyProgress = classifyTotal > 0 ? Math.round((classifyDone / classifyTotal) * 100) : 0
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -556,6 +572,25 @@ export default function TransactionsPage() {
             <span>{displayed.length}{taxOnly ? ` of ${transactions.length}` : ''} total</span>
           </div>
         </div>
+
+        {/* Classification progress */}
+        {classifyMutation.isPending && classifyTotal > 0 && (
+          <div className="px-1 py-2">
+            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+              <span className="flex items-center gap-1.5">
+                <RefreshCw size={12} className="animate-spin text-teal" />
+                AI classifying transactions…
+              </span>
+              <span>{classifyDone} / {classifyTotal}</span>
+            </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-teal rounded-full transition-all duration-500"
+                style={{ width: `${classifyProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Transaction groups */}
         {isLoading ? (
