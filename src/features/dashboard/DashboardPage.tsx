@@ -312,7 +312,9 @@ function StatusCard({ data }: { data: TaxReturnModel }) {
           </div>
         </div>
         <div>
-          <div className="text-xs text-slate-400">PAYE paid</div>
+          <div className="text-xs text-slate-400">
+            {(data.provisionalTaxPaid ?? 0) > 0 ? 'Provisional tax paid' : 'PAYE paid'}
+          </div>
           <div className="font-semibold text-navy text-sm mt-0.5">
             {formatNAD(data.payeAlreadyPaid)}
           </div>

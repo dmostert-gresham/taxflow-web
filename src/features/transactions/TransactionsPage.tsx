@@ -1,10 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import CsvImportModal from './CsvImportModal'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Upload, Zap, RefreshCw, AlertCircle,
   CheckCircle2, Clock, TrendingUp, TrendingDown, Pencil, X, Check,
-  Filter, ChevronDown, ChevronRight, Trash2,
+  Filter, ChevronDown, ChevronRight, Trash2, Search, SlidersHorizontal,
 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -60,6 +60,10 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; emoji: str
   TAX_PAYE:            { label: 'PAYE Tax',              color: 'badge-orange', emoji: '🏛️', hex: '#FF8C55', group: 'Tax' },
   TAX_PROVISIONAL:     { label: 'Provisional Tax',       color: 'badge-orange', emoji: '📋', hex: '#FF7A40', group: 'Tax' },
   TAX_VAT:             { label: 'VAT',                   color: 'badge-orange', emoji: '📑', hex: '#FF9966', group: 'Tax' },
+
+  // ── Assets / Loans ───────────────────────────────────────────────────────
+  LOAN_ISSUED:             { label: 'Loan Issued',             color: 'badge-gray', emoji: '🤝', hex: '#8896A8', group: 'Assets' },
+  LOAN_REPAYMENT_RECEIVED: { label: 'Loan Repayment Received', color: 'badge-gray', emoji: '↩️', hex: '#A0B0C0', group: 'Assets' },
 
   // ── Fallback ──────────────────────────────────────────────────────────────
   OTHER:               { label: 'Other',                 color: 'badge-orange', emoji: '❓', hex: '#FF6B35', group: 'Other' },
@@ -254,10 +258,14 @@ function CategoryCell({
 
 function TransactionRow({
   tx,
+  selected,
+  onToggle,
   onSave,
   onDelete,
 }: {
   tx: Transaction
+  selected: boolean
+  onToggle: (id: number) => void
   onSave: (id: number, category: string) => Promise<void>
   onDelete: (id: number) => Promise<void>
 }) {
@@ -275,7 +283,15 @@ function TransactionRow({
   }
 
   return (
-    <tr className="hover:bg-slate-50 transition-colors group">
+    <tr className={clsx('transition-colors group', selected ? 'bg-teal/5' : 'hover:bg-slate-50')}>
+      <td className="table-cell w-px" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(tx.id)}
+          className="w-3.5 h-3.5 accent-teal cursor-pointer"
+        />
+      </td>
       <td className="table-cell text-slate-500 text-xs whitespace-nowrap">
         {new Date(tx.transactionDate).toLocaleDateString('en-NA', {
           day: '2-digit', month: 'short', year: 'numeric',
@@ -350,15 +366,31 @@ function TransactionRow({
 function YearSection({
   taxYear,
   transactions,
+  selectedIds,
+  onToggle,
+  onToggleYear,
   onSave,
   onDelete,
 }: {
   taxYear: string
   transactions: Transaction[]
+  selectedIds: Set<number>
+  onToggle: (id: number) => void
+  onToggleYear: (ids: number[], checked: boolean) => void
   onSave: (id: number, category: string) => Promise<void>
   onDelete: (id: number) => Promise<void>
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const selectAllRef = useRef<HTMLInputElement>(null)
+
+  const yearIds       = transactions.map((t) => t.id)
+  const selectedCount = yearIds.filter((id) => selectedIds.has(id)).length
+  const allSelected   = selectedCount === yearIds.length && yearIds.length > 0
+  const someSelected  = selectedCount > 0 && !allSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected
+  }, [someSelected])
 
   return (
     <div className="card overflow-hidden">
@@ -374,6 +406,11 @@ function YearSection({
             : <ChevronDown  size={15} className="text-slate-400" />}
           <span className="font-semibold text-navy text-sm">{taxYear}</span>
           <span className="text-slate-400 text-xs">{transactions.length} transactions</span>
+          {selectedCount > 0 && (
+            <span className="text-xs bg-teal/10 text-teal px-1.5 py-0.5 rounded-full font-medium">
+              {selectedCount} selected
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
           <span className="text-teal-dark font-medium">
@@ -393,6 +430,15 @@ function YearSection({
         <table className="w-full">
           <thead>
             <tr className="bg-white border-b border-slate-100">
+              <th className="table-header w-px" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  ref={selectAllRef}
+                  checked={allSelected}
+                  onChange={(e) => onToggleYear(yearIds, e.target.checked)}
+                  className="w-3.5 h-3.5 accent-teal cursor-pointer"
+                />
+              </th>
               <th className="table-header text-left">Date</th>
               <th className="table-header text-left">Description</th>
               <th className="table-header text-left">
@@ -409,6 +455,8 @@ function YearSection({
               <TransactionRow
                 key={tx.id}
                 tx={tx}
+                selected={selectedIds.has(tx.id)}
+                onToggle={onToggle}
                 onSave={onSave}
                 onDelete={onDelete}
               />
@@ -426,8 +474,30 @@ export default function TransactionsPage() {
   const queryClient = useQueryClient()
   const fileRef     = useRef<HTMLInputElement>(null)
 
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [taxOnly,    setTaxOnly]    = useState(false)
+  const [importFile,    setImportFile]    = useState<File | null>(null)
+  const [taxOnly,       setTaxOnly]       = useState(false)
+  const [selectedIds,   setSelectedIds]   = useState<Set<number>>(() => new Set())
+  const [bulkCategory,  setBulkCategory]  = useState('')
+  const [showFilters,   setShowFilters]   = useState(false)
+  const [filterText,    setFilterText]    = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterType,    setFilterType]    = useState<'ALL' | 'CREDIT' | 'DEBIT'>('ALL')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo,  setFilterDateTo]  = useState('')
+  const [filterAmtMin,  setFilterAmtMin]  = useState('')
+  const [filterAmtMax,  setFilterAmtMax]  = useState('')
+
+  const clearFilters = () => {
+    setFilterText(''); setFilterCategory(''); setFilterType('ALL')
+    setFilterDateFrom(''); setFilterDateTo('')
+    setFilterAmtMin(''); setFilterAmtMax('')
+  }
+  const activeFilterCount = [
+    filterText, filterCategory,
+    filterType !== 'ALL',
+    filterDateFrom, filterDateTo,
+    filterAmtMin, filterAmtMax,
+  ].filter(Boolean).length
 
   const { data: transactions = [], isLoading } = useQuery({
     queryKey: ['transactions'],
@@ -493,12 +563,52 @@ export default function TransactionsPage() {
     toast.success('Transaction removed')
   }
 
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleYear = (ids: number[], checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) ids.forEach((id) => next.add(id))
+      else ids.forEach((id) => next.delete(id))
+      return next
+    })
+  }
+
+  const bulkMutation = useMutation({
+    mutationFn: async () => {
+      await api.patch('/statements/category', {
+        ids: [...selectedIds],
+        category: bulkCategory,
+      })
+    },
+    onSuccess: () => {
+      toast.success(`${selectedIds.size} transactions updated`)
+      setSelectedIds(new Set())
+      setBulkCategory('')
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    },
+    onError: (err) => toast.error(extractErrorMessage(err)),
+  })
+
   const rawCount        = transactions.filter((t) => t.status === 'RAW').length
   const classifiedCount = transactions.filter((t) => t.status === 'CLASSIFIED').length
 
-  const displayed = taxOnly
-    ? transactions.filter((t) => t.category && TAX_RELEVANT_CATEGORIES.has(t.category))
-    : transactions
+  const displayed = transactions
+    .filter((t) => !taxOnly || (t.category && TAX_RELEVANT_CATEGORIES.has(t.category)))
+    .filter((t) => !filterText    || t.description.toLowerCase().includes(filterText.toLowerCase()))
+    .filter((t) => !filterCategory || t.category === filterCategory)
+    .filter((t) => filterType === 'ALL' || t.transactionType === filterType)
+    .filter((t) => !filterDateFrom || t.transactionDate >= filterDateFrom)
+    .filter((t) => !filterDateTo   || t.transactionDate <= filterDateTo)
+    .filter((t) => !filterAmtMin   || Math.abs(t.amount) >= parseFloat(filterAmtMin))
+    .filter((t) => !filterAmtMax   || Math.abs(t.amount) <= parseFloat(filterAmtMax))
 
   // Group by tax year, most recent first
   const byYear = displayed.reduce<Record<string, Transaction[]>>((acc, tx) => {
@@ -556,6 +666,23 @@ export default function TransactionsPage() {
             {taxOnly ? 'Tax-relevant only' : 'All transactions'}
           </button>
 
+          <button
+              onClick={() => setShowFilters((v) => !v)}
+              className={clsx(
+                'btn-outline flex items-center gap-2 text-sm transition-colors relative',
+                showFilters && 'bg-navy/5 text-navy border-navy/30'
+              )}
+          >
+            <SlidersHorizontal size={15} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-teal text-white
+                               text-[10px] rounded-full flex items-center justify-center font-bold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
           <div className="flex items-center gap-4 ml-auto text-sm text-slate-500">
             {rawCount > 0 && (
                 <span className="flex items-center gap-1.5">
@@ -569,9 +696,133 @@ export default function TransactionsPage() {
                   {classifiedCount} classified
             </span>
             )}
-            <span>{displayed.length}{taxOnly ? ` of ${transactions.length}` : ''} total</span>
+            <span>
+              {displayed.length}
+              {(taxOnly || activeFilterCount > 0) ? ` of ${transactions.length}` : ''}
+              {' '}total
+            </span>
           </div>
         </div>
+
+        {/* Filter panel */}
+        {showFilters && (
+          <div className="card p-4">
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <p className="text-xs font-medium text-slate-500 mb-1">Description</p>
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search descriptions…"
+                    value={filterText}
+                    onChange={(e) => setFilterText(e.target.value)}
+                    className="input pl-8 text-sm w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="min-w-[180px]">
+                <p className="text-xs font-medium text-slate-500 mb-1">Category</p>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="input text-sm w-full"
+                >
+                  <option value="">All categories</option>
+                  {Object.entries(
+                    ALL_CATEGORIES.reduce<Record<string, string[]>>((groups, cat) => {
+                      const group = CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.group ?? 'Other'
+                      if (!groups[group]) groups[group] = []
+                      groups[group].push(cat)
+                      return groups
+                    }, {})
+                  ).map(([group, cats]) => (
+                    <optgroup key={group} label={group}>
+                      {cats.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.label ?? cat}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">Type</p>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
+                  {(['ALL', 'CREDIT', 'DEBIT'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setFilterType(t)}
+                      className={clsx(
+                        'px-3 py-2 transition-colors',
+                        filterType === t ? 'bg-navy text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                      )}
+                    >
+                      {t === 'ALL' ? 'All' : t === 'CREDIT' ? 'Credit' : 'Debit'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">From date</p>
+                <input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={(e) => setFilterDateFrom(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">To date</p>
+                <input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={(e) => setFilterDateTo(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">Min amount (N$)</p>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={filterAmtMin}
+                  onChange={(e) => setFilterAmtMin(e.target.value)}
+                  className="input text-sm w-28"
+                  min="0"
+                />
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">Max amount (N$)</p>
+                <input
+                  type="number"
+                  placeholder="∞"
+                  value={filterAmtMax}
+                  onChange={(e) => setFilterAmtMax(e.target.value)}
+                  className="input text-sm w-28"
+                  min="0"
+                />
+              </div>
+
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-navy transition-colors pb-0.5"
+                >
+                  <X size={14} />
+                  Clear filters
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Classification progress */}
         {classifyMutation.isPending && classifyTotal > 0 && (
@@ -607,11 +858,18 @@ export default function TransactionsPage() {
           </div>
         ) : displayed.length === 0 ? (
           <div className="card p-12 text-center">
-            <Filter size={32} className="text-slate-200 mx-auto mb-3" />
-            <p className="text-slate-500 text-sm">No tax-relevant transactions</p>
+            <SlidersHorizontal size={32} className="text-slate-200 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">No matching transactions</p>
             <p className="text-slate-400 text-xs mt-1">
-              Classify transactions as income or deductions to see them here
+              {activeFilterCount > 0 || taxOnly
+                ? 'Try adjusting or clearing your filters'
+                : 'No transactions to display'}
             </p>
+            {activeFilterCount > 0 && (
+              <button onClick={clearFilters} className="mt-3 text-xs text-teal hover:underline">
+                Clear all filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -620,6 +878,9 @@ export default function TransactionsPage() {
                 key={yr}
                 taxYear={yr}
                 transactions={byYear[yr]}
+                selectedIds={selectedIds}
+                onToggle={toggleSelected}
+                onToggleYear={toggleYear}
                 onSave={handleManualClassify}
                 onDelete={handleDelete}
               />
@@ -634,6 +895,54 @@ export default function TransactionsPage() {
           onClose={() => setImportFile(null)}
           onSuccess={handleImportSuccess}
         />
+      )}
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3
+                        bg-navy text-white rounded-xl shadow-2xl px-4 py-3 border border-white/10">
+          <span className="text-sm font-medium whitespace-nowrap">{selectedIds.size} selected</span>
+          <div className="h-4 w-px bg-white/20" />
+          <select
+            value={bulkCategory}
+            onChange={(e) => setBulkCategory(e.target.value)}
+            className="text-sm bg-white/10 text-white rounded-md px-2 py-1.5 border border-white/20
+                       focus:outline-none focus:ring-1 focus:ring-white/40 min-w-[180px]"
+          >
+            <option value="">— Pick category —</option>
+            {Object.entries(
+              ALL_CATEGORIES.reduce<Record<string, string[]>>((groups, cat) => {
+                const group = CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.group ?? 'Other'
+                if (!groups[group]) groups[group] = []
+                groups[group].push(cat)
+                return groups
+              }, {})
+            ).map(([group, cats]) => (
+              <optgroup key={group} label={group}>
+                {cats.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.emoji}{' '}
+                    {CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.label ?? cat}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button
+            onClick={() => bulkMutation.mutate()}
+            disabled={!bulkCategory || bulkMutation.isPending}
+            className="bg-teal hover:bg-teal-dark disabled:opacity-40 text-white text-sm font-medium
+                       px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap disabled:cursor-not-allowed"
+          >
+            {bulkMutation.isPending ? 'Applying…' : `Apply to ${selectedIds.size}`}
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center
+                       justify-center transition-colors"
+          >
+            <X size={12} />
+          </button>
+        </div>
       )}
       </>
   )

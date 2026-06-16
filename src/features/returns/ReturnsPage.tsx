@@ -489,6 +489,14 @@ function StatusBanner({ data }: { data: TaxReturnModel }) {
 function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPaye5?: boolean }) {
   const hasBreakdown = data.salary != null
   const p5 = hasPaye5 ? ' (PAYE5)' : ''
+  const provisionalTaxPaid = data.provisionalTaxPaid ?? 0
+  const payePrepaidLabel = hasPaye5 && provisionalTaxPaid > 0
+    ? 'Tax Prepaid (PAYE5 + Provisional)'
+    : hasPaye5
+      ? 'PAYE Already Paid (PAYE5)'
+      : provisionalTaxPaid > 0
+        ? 'Provisional Tax Paid'
+        : 'PAYE Already Paid'
 
   type RowType = 'income-item' | 'income' | 'deduction-item' | 'deduction' | 'subtotal' | 'tax' | 'result'
   const rows: { label: string; value: number; type: RowType }[] = []
@@ -513,7 +521,7 @@ function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPa
 
   rows.push({ label: 'Taxable Income',              value:  data.taxableIncome,    type: 'subtotal' })
   rows.push({ label: 'Gross Tax',                   value:  data.grossTax,         type: 'tax' })
-  rows.push({ label: `PAYE Already Paid${p5}`,      value: -data.payeAlreadyPaid,  type: 'deduction' })
+  rows.push({ label: payePrepaidLabel,               value: -data.payeAlreadyPaid,  type: 'deduction' })
   rows.push({ label: 'Net Tax Payable',             value:  data.netTax,           type: 'subtotal' })
   rows.push({ label: 'Refund / (Tax Owed)',         value:  data.refundOrLiability,type: 'result' })
 

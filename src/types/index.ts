@@ -59,6 +59,7 @@ export interface TaxReturnModel {
   rebates: number
   netTax: number
   payeAlreadyPaid: number
+  provisionalTaxPaid?: number   // >0 when detected from TAX_PROVISIONAL transactions
   refundOrLiability: number
   status: 'REFUND' | 'LIABILITY' | 'BREAK_EVEN'
   statusLabel: string
