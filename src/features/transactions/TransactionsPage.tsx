@@ -590,6 +590,7 @@ export default function TransactionsPage() {
   const [taxOnly,       setTaxOnly]       = useState(false)
   const [selectedIds,   setSelectedIds]   = useState<Set<number>>(() => new Set())
   const [bulkCategory,  setBulkCategory]  = useState('')
+  const [bulkPercentage, setBulkPercentage] = useState('')
   const [showFilters,   setShowFilters]   = useState(false)
   const [filterText,    setFilterText]    = useState('')
   const [filterCategory, setFilterCategory] = useState('')
@@ -710,6 +711,22 @@ export default function TransactionsPage() {
       toast.success(`${selectedIds.size} transactions updated`)
       setSelectedIds(new Set())
       setBulkCategory('')
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    },
+    onError: (err) => toast.error(extractErrorMessage(err)),
+  })
+
+  const bulkPercentageMutation = useMutation({
+    mutationFn: async () => {
+      await api.patch('/statements/deductible-percentage', {
+        ids: [...selectedIds],
+        deductiblePercentage: Number(bulkPercentage),
+      })
+    },
+    onSuccess: () => {
+      toast.success(`Deductible set to ${bulkPercentage}% on ${selectedIds.size} transactions`)
+      setSelectedIds(new Set())
+      setBulkPercentage('')
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
     },
     onError: (err) => toast.error(extractErrorMessage(err)),
@@ -1053,6 +1070,34 @@ export default function TransactionsPage() {
                        px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap disabled:cursor-not-allowed"
           >
             {bulkMutation.isPending ? 'Applying…' : `Apply to ${selectedIds.size}`}
+          </button>
+          <div className="h-4 w-px bg-white/20" />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={bulkPercentage}
+              onChange={(e) => setBulkPercentage(e.target.value)}
+              placeholder="Deduct."
+              className="text-sm bg-white/10 text-white rounded-md px-2 py-1.5 border border-white/20
+                         focus:outline-none focus:ring-1 focus:ring-white/40 w-20 placeholder:text-white/40"
+            />
+            <span className="text-sm text-white/50">%</span>
+          </div>
+          <button
+            onClick={() => bulkPercentageMutation.mutate()}
+            disabled={
+              bulkPercentage === '' ||
+              Number(bulkPercentage) < 0 ||
+              Number(bulkPercentage) > 100 ||
+              bulkPercentageMutation.isPending
+            }
+            className="bg-teal hover:bg-teal-dark disabled:opacity-40 text-white text-sm font-medium
+                       px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap disabled:cursor-not-allowed"
+          >
+            {bulkPercentageMutation.isPending ? 'Applying…' : 'Set deductible %'}
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
