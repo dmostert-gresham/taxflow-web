@@ -12,12 +12,17 @@ const ROLES = [
   { value: 'PRACTITIONER', label: 'Tax Practitioner' },
 ]
 
+const COUNTRIES = [
+  { value: 'NAMIBIA',      label: 'Namibia' },
+  { value: 'SOUTH_AFRICA', label: 'South Africa' },
+]
+
 export default function RegisterPage() {
   const navigate = useNavigate()
   const login    = useAuthStore((s) => s.login)
 
   const [form, setForm] = useState({
-    fullName: '', email: '', password: '', role: 'INDIVIDUAL', tin: '',
+    fullName: '', email: '', password: '', role: 'INDIVIDUAL', tin: '', country: 'NAMIBIA',
   })
   const [showPass, setShowPass]         = useState(false)
   const [loading, setLoading]           = useState(false)
@@ -45,8 +50,8 @@ export default function RegisterPage() {
     setError('')
     try {
       const res = await api.post<ApiResponse<AuthResponse>>('/auth/register', form)
-      const { token, userId, email, fullName, role, tin } = res.data.data
-      login(token, { id: userId, email, fullName, role, tin })
+      const { token, userId, email, fullName, role, tin, country } = res.data.data
+      login(token, { id: userId, email, fullName, role, tin, country: country ?? 'NAMIBIA' })
       toast.success('Account created!')
       navigate('/dashboard')
     } catch (err) {
@@ -132,6 +137,22 @@ export default function RegisterPage() {
                     <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="label">Tax jurisdiction</label>
+              <select
+                  className="input"
+                  value={form.country}
+                  onChange={set('country')}
+              >
+                {COUNTRIES.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                Determines which tax rules apply to your account — cannot be changed after registration
+              </p>
             </div>
 
             <div>

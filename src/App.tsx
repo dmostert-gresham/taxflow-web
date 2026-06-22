@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
+import { useInactivityTimeout } from './hooks/useInactivityTimeout'
 import AppShell from './components/layout/AppShell'
 import LoginPage from './features/auth/LoginPage'
 import RegisterPage from './features/auth/RegisterPage'
@@ -29,6 +30,8 @@ function RequireGuest({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useInactivityTimeout()
+
   return (
     <Routes>
       {/* Public routes */}

@@ -6,6 +6,7 @@ export interface AuthUser {
   fullName: string
   role: string
   tin: string
+  country: string
 }
 
 interface PractitionerSession {

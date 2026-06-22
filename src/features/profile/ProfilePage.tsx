@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
-import { User, Mail, Hash, Calendar, Trash2, AlertTriangle, ShieldCheck, FileText } from 'lucide-react'
+import { User, Mail, Hash, Calendar, Trash2, AlertTriangle, ShieldCheck, FileText, Globe } from 'lucide-react'
 import { api } from '../../api/client'
 import { useAuthStore } from '../../stores/authStore'
 import type { ApiResponse } from '../../types'
@@ -14,6 +14,7 @@ interface UserProfile {
   fullName: string
   tin: string
   role: string
+  country: string
   createdAt: string
 }
 
@@ -98,6 +99,9 @@ export default function ProfilePage() {
             </DetailRow>
             <DetailRow icon={<Hash size={15} className="text-slate-400" />} label="Tax Identification Number (TIN)">
               {profile.tin || <span className="text-slate-400 italic">Not set</span>}
+            </DetailRow>
+            <DetailRow icon={<Globe size={15} className="text-slate-400" />} label="Tax jurisdiction">
+              {profile.country === 'SOUTH_AFRICA' ? 'South Africa' : 'Namibia'}
             </DetailRow>
             <DetailRow icon={<Calendar size={15} className="text-slate-400" />} label="Member since">
               {memberSince}

@@ -18,6 +18,7 @@ export interface AuthResponse {
   fullName: string
   role: string
   tin: string
+  country: string
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ export interface Transaction {
   bankSource?: string
   category?: string
   status: 'RAW' | 'CLASSIFIED' | 'REVIEWED'
+  deductiblePercentage?: number
 }
 
 // ─── Tax Return ───────────────────────────────────────────────────────────

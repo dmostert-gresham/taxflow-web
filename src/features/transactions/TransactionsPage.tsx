@@ -82,6 +82,15 @@ const TAX_RELEVANT_CATEGORIES = new Set([
 
 const ALL_CATEGORIES = Object.keys(CATEGORY_CONFIG)
 
+// Categories whose amount feeds a deduction on the return, and so support an
+// adjustable deductible percentage (e.g. 60% business use of a vehicle).
+const DEDUCTIBLE_CATEGORIES = new Set([
+  'PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY',
+  'STUDY_POLICY', 'STUDY_LOAN',
+  'MEDICAL', 'DONATIONS',
+  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS',
+])
+
 function CategoryBadge({ category }: { category?: string }) {
   if (!category) return <span className="badge-gray">Unclassified</span>
   const cfg = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.OTHER
@@ -254,6 +263,100 @@ function CategoryCell({
   )
 }
 
+// ─── Deductible percentage cell (inline edit) ────────────────────────────────
+
+function DeductibleCell({
+  transaction,
+  onSave,
+}: {
+  transaction: Transaction
+  onSave: (id: number, pct: number) => Promise<void>
+}) {
+  const current = transaction.deductiblePercentage ?? 100
+  const [editing, setEditing] = useState(false)
+  const [value, setValue]     = useState(String(current))
+  const [saving, setSaving]   = useState(false)
+
+  // Only deductible-category transactions feed a deduction on the return.
+  if (!transaction.category || !DEDUCTIBLE_CATEGORIES.has(transaction.category)) {
+    return <span className="text-slate-300 text-xs">—</span>
+  }
+
+  const handleSave = async () => {
+    const pct = Number(value)
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+      setValue(String(current))
+      setEditing(false)
+      return
+    }
+    if (pct === current) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onSave(transaction.id, pct)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step={1}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
+          className="input text-xs py-1 w-16 text-right"
+          autoFocus
+        />
+        <span className="text-slate-400 text-xs">%</span>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-6 h-6 rounded bg-teal text-white flex items-center
+                     justify-center hover:bg-teal-light transition-colors"
+        >
+          {saving ? <RefreshCw size={10} className="animate-spin" /> : <Check size={10} />}
+        </button>
+        <button
+          onClick={() => { setEditing(false); setValue(String(current)) }}
+          className="w-6 h-6 rounded bg-slate-100 text-slate-500 flex items-center
+                     justify-center hover:bg-slate-200 transition-colors"
+        >
+          <X size={10} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 group">
+      <span className={clsx(
+        'font-mono text-sm tabular-nums',
+        current < 100 ? 'text-coral font-medium' : 'text-slate-600',
+      )}>
+        {current}%
+      </span>
+      <button
+        onClick={() => setEditing(true)}
+        className="w-5 h-5 rounded text-slate-300 hover:text-slate-500
+                   hover:bg-slate-100 flex items-center justify-center
+                   opacity-0 group-hover:opacity-100 transition-all"
+        title="Set deductible percentage"
+      >
+        <Pencil size={10} />
+      </button>
+    </div>
+  )
+}
+
 // ─── Transaction row with inline delete confirm ───────────────────────────────
 
 function TransactionRow({
@@ -261,12 +364,14 @@ function TransactionRow({
   selected,
   onToggle,
   onSave,
+  onSavePercentage,
   onDelete,
 }: {
   tx: Transaction
   selected: boolean
   onToggle: (id: number) => void
   onSave: (id: number, category: string) => Promise<void>
+  onSavePercentage: (id: number, pct: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
 }) {
   const [confirming, setConfirming] = useState(false)
@@ -302,6 +407,9 @@ function TransactionRow({
       </td>
       <td className="table-cell">
         <CategoryCell transaction={tx} onSave={onSave} />
+      </td>
+      <td className="table-cell">
+        <DeductibleCell transaction={tx} onSave={onSavePercentage} />
       </td>
       <td className="table-cell text-right whitespace-nowrap">
         <span className={clsx(
@@ -370,6 +478,7 @@ function YearSection({
   onToggle,
   onToggleYear,
   onSave,
+  onSavePercentage,
   onDelete,
 }: {
   taxYear: string
@@ -378,6 +487,7 @@ function YearSection({
   onToggle: (id: number) => void
   onToggleYear: (ids: number[], checked: boolean) => void
   onSave: (id: number, category: string) => Promise<void>
+  onSavePercentage: (id: number, pct: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
 }) {
   const [collapsed, setCollapsed] = useState(false)
@@ -445,6 +555,7 @@ function YearSection({
                 Category
                 <span className="text-slate-300 font-normal ml-1.5 text-xs">hover to edit</span>
               </th>
+              <th className="table-header text-left whitespace-nowrap">Deductible %</th>
               <th className="table-header text-right">Amount</th>
               <th className="table-header text-left">Type</th>
               <th className="table-header" />
@@ -458,6 +569,7 @@ function YearSection({
                 selected={selectedIds.has(tx.id)}
                 onToggle={onToggle}
                 onSave={onSave}
+                onSavePercentage={onSavePercentage}
                 onDelete={onDelete}
               />
             ))}
@@ -555,6 +667,12 @@ export default function TransactionsPage() {
     await api.patch(`/statements/${id}/category`, { category })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     toast.success('Category updated')
+  }
+
+  const handleSavePercentage = async (id: number, pct: number) => {
+    await api.patch(`/statements/${id}/deductible-percentage`, { deductiblePercentage: pct })
+    queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    toast.success(`Deductible set to ${pct}%`)
   }
 
   const handleDelete = async (id: number) => {
@@ -882,6 +1000,7 @@ export default function TransactionsPage() {
                 onToggle={toggleSelected}
                 onToggleYear={toggleYear}
                 onSave={handleManualClassify}
+                onSavePercentage={handleSavePercentage}
                 onDelete={handleDelete}
               />
             ))}
