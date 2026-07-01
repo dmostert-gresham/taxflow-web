@@ -4,10 +4,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle, Download, Wand2,
   TrendingUp, TrendingDown, Minus, ArrowRight,
-  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle,
+  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle, Receipt, X,
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
-import type { ApiResponse, TaxReturnModel, DeductionSuggestion, IncomeSummary, Paye5Result } from '../../types'
+import type { ApiResponse, TaxReturnModel, DeductionSuggestion, IncomeSummary, Paye5Result, Transaction } from '../../types'
 import { useTaxYearStore, TAX_YEARS } from '../../stores/taxYearStore'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -276,7 +276,7 @@ export default function ReturnsPage() {
             ) : data ? (
                 <>
                   <StatusBanner data={data} />
-                  <BreakdownCard data={data} hasPaye5={hasPaye5} />
+                  <BreakdownCard data={data} hasPaye5={hasPaye5} taxYear={taxYear} />
                 </>
             ) : null}
           </div>
@@ -489,7 +489,18 @@ function StatusBanner({ data }: { data: TaxReturnModel }) {
   )
 }
 
-function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPaye5?: boolean }) {
+function BreakdownCard({ data, hasPaye5 = false, taxYear }: { data: TaxReturnModel; hasPaye5?: boolean; taxYear: string }) {
+  const [drill, setDrill] = useState<{ label: string; categories: string[] } | null>(null)
+
+  const { data: allTxns = [] } = useQuery({
+    queryKey: ['transactions'],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<Transaction[]>>('/statements')
+      return res.data.data
+    },
+    staleTime: 60_000,
+  })
+
   const hasBreakdown = data.salary != null
   const p5 = hasPaye5 ? ' (PAYE5)' : ''
   const provisionalTaxPaid = data.provisionalTaxPaid ?? 0
@@ -502,26 +513,26 @@ function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPa
         : 'PAYE Already Paid'
 
   type RowType = 'income-item' | 'income' | 'deduction-item' | 'deduction' | 'subtotal' | 'tax' | 'result'
-  const rows: { label: string; value: number; type: RowType }[] = []
+  const rows: { label: string; value: number; type: RowType; categories?: string[] }[] = []
 
   if (hasBreakdown) {
-    if ((data.salary         ?? 0) > 0) rows.push({ label: `Salary${p5}`,           value:  data.salary!,         type: 'income-item' })
-    if ((data.commission     ?? 0) > 0) rows.push({ label: 'Commission',             value:  data.commission!,     type: 'income-item' })
-    if ((data.freelanceIncome ?? 0) > 0) rows.push({ label: 'Freelance / Contract', value:  data.freelanceIncome!, type: 'income-item' })
-    if ((data.rentalIncome   ?? 0) > 0) rows.push({ label: 'Rental Income',          value:  data.rentalIncome!,   type: 'income-item' })
-    if ((data.interestIncome ?? 0) > 0) rows.push({ label: 'Interest Income',        value:  data.interestIncome!, type: 'income-item' })
-    if ((data.businessIncome ?? 0) > 0) rows.push({ label: 'Business / Gratuity',   value:  data.businessIncome!, type: 'income-item' })
-    if ((data.allowanceIncome ?? 0) > 0) rows.push({ label: 'Allowances',            value:  data.allowanceIncome!,type: 'income-item' })
-    if ((data.otherIncome    ?? 0) > 0) rows.push({ label: 'Other Income',           value:  data.otherIncome!,    type: 'income-item' })
+    if ((data.salary         ?? 0) > 0) rows.push({ label: `Salary${p5}`,           value:  data.salary!,         type: 'income-item', categories: ['SALARY'] })
+    if ((data.commission     ?? 0) > 0) rows.push({ label: 'Commission',             value:  data.commission!,     type: 'income-item', categories: ['COMMISSION'] })
+    if ((data.freelanceIncome ?? 0) > 0) rows.push({ label: 'Freelance / Contract', value:  data.freelanceIncome!, type: 'income-item', categories: ['FREELANCE_INCOME'] })
+    if ((data.rentalIncome   ?? 0) > 0) rows.push({ label: 'Rental Income',          value:  data.rentalIncome!,   type: 'income-item', categories: ['RENTAL_INCOME'] })
+    if ((data.interestIncome ?? 0) > 0) rows.push({ label: 'Interest Income',        value:  data.interestIncome!, type: 'income-item', categories: ['INTEREST_INCOME'] })
+    if ((data.businessIncome ?? 0) > 0) rows.push({ label: 'Business / Gratuity',   value:  data.businessIncome!, type: 'income-item', categories: ['BUSINESS_INCOME', 'GRATUITY'] })
+    if ((data.allowanceIncome ?? 0) > 0) rows.push({ label: 'Allowances',            value:  data.allowanceIncome!,type: 'income-item', categories: ['ENTERTAINMENT_ALLOWANCE', 'VEHICLE_ALLOWANCE', 'SUBSISTENCE_ALLOWANCE', 'HOUSING_ALLOWANCE'] })
+    if ((data.otherIncome    ?? 0) > 0) rows.push({ label: 'Other Income',           value:  data.otherIncome!,    type: 'income-item', categories: ['OTHER_INCOME'] })
   }
 
   rows.push({ label: hasBreakdown ? 'Total Income' : `Gross Income${p5}`, value: data.grossIncome, type: 'income' })
 
-  if (data.pensionContributions      > 0) rows.push({ label: `Pension Contributions${p5}`, value: -data.pensionContributions,     type: 'deduction-item' })
-  if (data.medicalExpenses           > 0) rows.push({ label: 'Medical Expenses',            value: -data.medicalExpenses,          type: 'deduction-item' })
-  if (data.donationsToApprovedBodies > 0) rows.push({ label: 'Donations',                   value: -data.donationsToApprovedBodies,type: 'deduction-item' })
-  if (data.studyLoanInterest         > 0) rows.push({ label: 'Study Loan Interest',         value: -data.studyLoanInterest,        type: 'deduction-item' })
-  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item' })
+  if (data.pensionContributions      > 0) rows.push({ label: `Pension Contributions${p5}`, value: -data.pensionContributions,     type: 'deduction-item', categories: ['PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY'] })
+  if (data.medicalExpenses           > 0) rows.push({ label: 'Medical Expenses',            value: -data.medicalExpenses,          type: 'deduction-item', categories: ['MEDICAL'] })
+  if (data.donationsToApprovedBodies > 0) rows.push({ label: 'Donations',                   value: -data.donationsToApprovedBodies,type: 'deduction-item', categories: ['DONATIONS'] })
+  if (data.studyLoanInterest         > 0) rows.push({ label: 'Study Loan Interest',         value: -data.studyLoanInterest,        type: 'deduction-item', categories: ['STUDY_LOAN'] })
+  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item', categories: ['HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS'] })
 
   rows.push({ label: 'Taxable Income',              value:  data.taxableIncome,    type: 'subtotal' })
   rows.push({ label: 'Gross Tax',                   value:  data.grossTax,         type: 'tax' })
@@ -529,13 +540,20 @@ function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPa
   rows.push({ label: 'Net Tax Payable',             value:  data.netTax,           type: 'subtotal' })
   rows.push({ label: 'Refund / (Tax Owed)',         value:  data.refundOrLiability,type: 'result' })
 
+  const drillTxns = drill
+    ? allTxns
+        .filter((t) => t.taxYear === taxYear && drill.categories.includes(t.category ?? ''))
+        .sort((a, b) => a.transactionDate.localeCompare(b.transactionDate))
+    : []
+
   return (
+    <>
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="section-title mb-0">ITX breakdown</h2>
         </div>
         <div className="divide-y divide-slate-50">
-          {rows.map(({ label, value, type }) => (
+          {rows.map(({ label, value, type, categories }) => (
               <div
                   key={label}
                   className={clsx(
@@ -546,14 +564,25 @@ function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPa
                       type === 'deduction-item' && 'pl-8',
                   )}
               >
-                <span className={clsx(
-                    'text-sm',
-                    type === 'result'       ? 'text-navy font-semibold' :
-                    type === 'income-item'  ? 'text-slate-500' :
-                    type === 'deduction-item' ? 'text-slate-500' : 'text-slate-600'
-                )}>
-                  {label}
-                </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className={clsx(
+                      'text-sm',
+                      type === 'result'       ? 'text-navy font-semibold' :
+                      type === 'income-item'  ? 'text-slate-500' :
+                      type === 'deduction-item' ? 'text-slate-500' : 'text-slate-600'
+                  )}>
+                    {label}
+                  </span>
+                  {categories && (
+                    <button
+                        onClick={() => setDrill({ label, categories })}
+                        className="text-slate-300 hover:text-teal transition-colors shrink-0"
+                        title="View underlying transactions"
+                    >
+                      <Receipt size={13} />
+                    </button>
+                  )}
+                </div>
                 <span className={clsx(
                     'font-mono text-sm font-medium',
                     value < 0              ? 'text-coral' :
@@ -567,5 +596,92 @@ function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPa
           ))}
         </div>
       </div>
+
+      {drill && (
+        <LineTransactionsModal
+          label={drill.label}
+          taxYear={taxYear}
+          transactions={drillTxns}
+          onClose={() => setDrill(null)}
+        />
+      )}
+    </>
+  )
+}
+
+/** Prettify a TransactionCategory enum name, e.g. FREELANCE_INCOME → "Freelance Income". */
+function prettyCategory(c?: string): string {
+  if (!c) return 'Uncategorised'
+  return c.split('_').map((w) => w.charAt(0) + w.slice(1).toLowerCase()).join(' ')
+}
+
+/** Modal listing the transactions that make up a single Return-breakdown line. */
+function LineTransactionsModal({
+  label, taxYear, transactions, onClose,
+}: {
+  label: string
+  taxYear: string
+  transactions: Transaction[]
+  onClose: () => void
+}) {
+  const total = transactions.reduce((s, t) => s + Math.abs(t.amount), 0)
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-panel max-w-lg w-full max-h-[80vh] flex flex-col animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-navy truncate">{label}</h3>
+            <p className="text-xs text-slate-400">{taxYear} · underlying transactions</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0 ml-3">
+            <X size={18} />
+          </button>
+        </div>
+
+        {transactions.length === 0 ? (
+          <div className="px-5 py-10 text-center text-sm text-slate-500">
+            No matching transactions for {taxYear}.
+            <div className="text-xs text-slate-400 mt-1.5">
+              This amount may have been entered manually or taken from an uploaded certificate,
+              rather than derived from classified transactions.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-y-auto divide-y divide-slate-50">
+              {transactions.map((t) => (
+                <div key={t.id} className="flex items-start justify-between gap-3 px-5 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-sm text-navy truncate">{t.description}</div>
+                    <div className="text-xs text-slate-400">
+                      {t.transactionDate} · {prettyCategory(t.category)}
+                      {t.deductiblePercentage != null && t.deductiblePercentage !== 100 && (
+                        <span> · {t.deductiblePercentage}% deductible</span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm text-slate-600 shrink-0">
+                    {formatNAD(Math.abs(t.amount))}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50">
+              <span className="text-xs font-medium text-slate-500">
+                {transactions.length} transaction{transactions.length === 1 ? '' : 's'}
+              </span>
+              <span className="font-mono text-sm font-semibold text-navy">{formatNAD(total)}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
