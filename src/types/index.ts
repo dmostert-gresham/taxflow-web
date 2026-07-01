@@ -48,6 +48,7 @@ export interface TaxReturnModel {
   interestIncome?: number | null
   businessIncome?: number | null
   allowanceIncome?: number | null
+  otherIncome?: number | null
   grossIncome: number
   transactionCount: number
   pensionContributions: number

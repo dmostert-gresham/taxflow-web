@@ -512,6 +512,7 @@ function BreakdownCard({ data, hasPaye5 = false }: { data: TaxReturnModel; hasPa
     if ((data.interestIncome ?? 0) > 0) rows.push({ label: 'Interest Income',        value:  data.interestIncome!, type: 'income-item' })
     if ((data.businessIncome ?? 0) > 0) rows.push({ label: 'Business / Gratuity',   value:  data.businessIncome!, type: 'income-item' })
     if ((data.allowanceIncome ?? 0) > 0) rows.push({ label: 'Allowances',            value:  data.allowanceIncome!,type: 'income-item' })
+    if ((data.otherIncome    ?? 0) > 0) rows.push({ label: 'Other Income',           value:  data.otherIncome!,    type: 'income-item' })
   }
 
   rows.push({ label: hasBreakdown ? 'Total Income' : `Gross Income${p5}`, value: data.grossIncome, type: 'income' })
