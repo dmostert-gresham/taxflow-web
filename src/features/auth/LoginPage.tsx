@@ -62,7 +62,7 @@ export default function LoginPage() {
             </h1>
             <p className="text-slate-300 text-base leading-relaxed max-w-sm">
               Upload your bank statements, let AI classify your transactions, and
-              generate your ITX return in minutes — not hours.
+              generate your tax return in minutes — not hours.
             </p>
 
             <div className="mt-10 grid grid-cols-2 gap-4">
