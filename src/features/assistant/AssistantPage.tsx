@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { Send, Bot, User, Loader2, Sparkles } from 'lucide-react'
 import { api, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, ChatMessage } from '../../types'
+import { useTaxYearStore } from '../../stores/taxYearStore'
 import clsx from 'clsx'
 import ReactMarkdown from 'react-markdown'
 
@@ -15,13 +16,11 @@ const SUGGESTED = [
   'Can I claim medical expenses as a deduction?',
 ]
 
-const TAX_YEARS = ['2024/25', '2023/24']
-
 export default function AssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput]       = useState('')
   const [sessionId, setSessionId] = useState('')
-  const [taxYear, setTaxYear]   = useState(TAX_YEARS[0])
+  const taxYear = useTaxYearStore((s) => s.taxYear)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -90,13 +89,7 @@ export default function AssistantPage() {
             </div>
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <span>Tax year:</span>
-              <select
-                  value={taxYear}
-                  onChange={(e) => setTaxYear(e.target.value)}
-                  className="input w-auto text-sm py-1.5"
-              >
-                {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
+              <span className="font-semibold text-navy">{taxYear}</span>
             </div>
           </div>
         </div>

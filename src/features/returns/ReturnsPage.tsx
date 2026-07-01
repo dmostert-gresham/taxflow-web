@@ -2,16 +2,15 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, AlertCircle, Download, Wand2,
+  AlertCircle, Download, Wand2,
   TrendingUp, TrendingDown, Minus, ArrowRight,
   Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle,
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
 import type { ApiResponse, TaxReturnModel, DeductionSuggestion, IncomeSummary, Paye5Result } from '../../types'
+import { useTaxYearStore, TAX_YEARS } from '../../stores/taxYearStore'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
-
-const TAX_YEARS = ['2025/26', '2024/25', '2023/24', '2022/23']
 
 export default function ReturnsPage() {
   const [searchParams] = useSearchParams()
@@ -22,10 +21,22 @@ export default function ReturnsPage() {
   const urlPaye        = searchParams.get('paye')        ?? ''
   const urlPension     = searchParams.get('pension')     ?? ''
 
-  const initialTaxYear = TAX_YEARS.includes(urlTaxYear) ? urlTaxYear : TAX_YEARS[0]
+  const hasUrlTaxYear  = (TAX_YEARS as readonly string[]).includes(urlTaxYear)
   const hasUrlPrefill  = urlGrossIncome !== '' || urlPaye !== '' || urlPension !== ''
 
-  const [taxYear, setTaxYear]               = useState(initialTaxYear)
+  // Align the global tax year with a deep-link ?taxYear= param once, synchronously,
+  // before the store is read below — so prefill guards see the correct year on the
+  // very first render (preserving the no-overwrite behaviour for gross/paye/pension).
+  useState(() => {
+    if (hasUrlTaxYear && urlTaxYear !== useTaxYearStore.getState().taxYear) {
+      useTaxYearStore.getState().setTaxYear(urlTaxYear as typeof TAX_YEARS[number])
+    }
+    return null
+  })
+
+  const taxYear    = useTaxYearStore((s) => s.taxYear)
+  const setTaxYear  = useTaxYearStore((s) => s.setTaxYear)
+  const initialTaxYear = hasUrlTaxYear ? urlTaxYear : taxYear
   const [grossIncome, setGrossIncome]       = useState(urlGrossIncome || '0')
   const [paye, setPaye]                     = useState(urlPaye    || '0')
   const [pension, setPension]               = useState(urlPension || '0')
@@ -244,16 +255,8 @@ export default function ReturnsPage() {
             <h1 className="page-title">Tax Returns</h1>
             <p className="page-subtitle">Your ITX return breakdown</p>
           </div>
-          <div className="relative">
-            <select
-                value={taxYear}
-                onChange={(e) => setTaxYear(e.target.value)}
-                className="input pr-8 appearance-none cursor-pointer font-medium text-navy"
-            >
-              {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2
-                                            text-slate-400 pointer-events-none" />
+          <div className="text-sm text-slate-500">
+            Tax year: <span className="font-semibold text-navy">{taxYear}</span>
           </div>
         </div>
 

@@ -7,23 +7,12 @@ import {
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
 import { useAuthStore } from '../../stores/authStore'
+import { useTaxYearStore } from '../../stores/taxYearStore'
 import type { ApiResponse, TaxReturnModel, Paye5Result } from '../../types'
 import clsx from 'clsx'
 
 type Plan = 'BASIC' | 'PROFESSIONAL' | 'BUSINESS' | 'PRACTITIONER'
 const PLAN_RANK: Record<Plan, number> = { BASIC: 0, PROFESSIONAL: 1, BUSINESS: 2, PRACTITIONER: 3 }
-
-// Tax year runs March 1 → last day of February.
-// March–December: the year that ended this past Feb = (year-1)/(year)
-// January–February: the year that ended last Feb    = (year-2)/(year-1)
-function currentTaxYear(): string {
-  const now = new Date()
-  const year = now.getFullYear()
-  const startYear = now.getMonth() >= 2 ? year - 1 : year - 2
-  return `${startYear}/${String(startYear + 1).slice(2)}`
-}
-
-const TAX_YEAR = currentTaxYear()
 
 function greeting() {
   const h = new Date().getHours()
@@ -41,6 +30,7 @@ function daysUntilDeadline() {
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user)
+  const TAX_YEAR = useTaxYearStore((s) => s.taxYear)
 
   const { data: subscription } = useQuery({
     queryKey: ['subscription'],

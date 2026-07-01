@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
+import { useTaxYearStore, TAX_YEARS } from '../../stores/taxYearStore'
 import { api } from '../../api/client'
 import type { ApiResponse } from '../../types'
 import clsx from 'clsx'
@@ -35,6 +36,8 @@ const ADMIN_ITEMS = [
 
 export default function AppShell() {
   const { user, logout, practitionerSession, exitImpersonation } = useAuthStore()
+  const taxYear    = useTaxYearStore((s) => s.taxYear)
+  const setTaxYear = useTaxYearStore((s) => s.setTaxYear)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -112,6 +115,22 @@ export default function AppShell() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Tax year selector — single source of truth for the whole app */}
+          <div className="px-4 py-3 border-b border-slate-100">
+            <label htmlFor="sidebar-tax-year"
+                   className="block text-[10px] font-semibold text-slate-400 tracking-wide uppercase mb-1">
+              Tax Year
+            </label>
+            <select
+              id="sidebar-tax-year"
+              className="input w-full text-sm"
+              value={taxYear}
+              onChange={(e) => setTaxYear(e.target.value as typeof taxYear)}
+            >
+              {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
           </div>
 
           {/* Navigation */}

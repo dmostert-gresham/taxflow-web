@@ -6,10 +6,9 @@ import {
 } from 'lucide-react'
 import { api, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, Paye5Result, TaxCertListResult, TaxCertItem, TaxCertUploadResult } from '../../types'
+import { useTaxYearStore } from '../../stores/taxYearStore'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
-
-const TAX_YEARS = ['2025/26', '2024/25', '2023/24', '2022/23']
 
 interface EditableValues {
   grossIncome:          string
@@ -51,9 +50,9 @@ export default function DocumentsPage() {
   const queryClient  = useQueryClient()
   const fileRef      = useRef<HTMLInputElement>(null)
 
-  const [taxYear, setTaxYear]           = useState(TAX_YEARS[0])
+  const taxYear = useTaxYearStore((s) => s.taxYear)
   const [uploading, setUploading]       = useState(false)
-  const [saving, setSaving]             = useState(false)
+  const [savingPaye5, setSavingPaye5]   = useState(false)
   const [hasOcrResult, setHasOcrResult] = useState(false)
   const [error, setError]               = useState('')
   const [values, setValues]             = useState<EditableValues>(EMPTY_VALUES)
@@ -78,14 +77,15 @@ export default function DocumentsPage() {
     }
   }, [saved, hasOcrResult])
 
-  const handleTaxYearChange = (year: string) => {
-    setTaxYear(year)
+  // When the global tax year changes, reset the in-progress OCR/edit state so
+  // stale values from another year don't carry over.
+  useEffect(() => {
     setHasOcrResult(false)
     setValues(EMPTY_VALUES)
     setRetirementEdits(new Map())
     setStudyEdits(new Map())
     setError('')
-  }
+  }, [taxYear])
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -116,50 +116,47 @@ export default function DocumentsPage() {
     }
   }
 
-  const handleSave = async () => {
-    setSaving(true)
+  const handleSavePaye5 = async () => {
+    setSavingPaye5(true)
     try {
-      const hasPaye5 = Object.values(values).some(v => v !== '')
-      if (hasPaye5 || hasOcrResult) {
-        await api.put('/documents/paye5', {
-          taxYear,
-          grossIncome:          parseDecimal(values.grossIncome),
-          payeDeducted:         parseDecimal(values.payeDeducted),
-          pensionContributions: parseDecimal(values.pensionContributions),
-          medicalContributions: parseDecimal(values.medicalContributions),
-          employerTin:          values.employerTin.trim() || undefined,
-        })
-        queryClient.invalidateQueries({ queryKey: ['paye5', taxYear] })
-        setHasOcrResult(false)
-      }
-
-      for (const [id, edit] of retirementEdits) {
-        await api.put(`/documents/retirement-fund/${id}`, {
-          amount: parseDecimal(edit.amount),
-          name:   edit.name.trim() || undefined,
-        })
-      }
-      if (retirementEdits.size > 0) {
-        queryClient.invalidateQueries({ queryKey: ['cert-retirement-fund', taxYear] })
-        setRetirementEdits(new Map())
-      }
-
-      for (const [id, edit] of studyEdits) {
-        await api.put(`/documents/study-policy/${id}`, {
-          amount: parseDecimal(edit.amount),
-          name:   edit.name.trim() || undefined,
-        })
-      }
-      if (studyEdits.size > 0) {
-        queryClient.invalidateQueries({ queryKey: ['cert-study-policy', taxYear] })
-        setStudyEdits(new Map())
-      }
-
-      toast.success('Documents saved')
+      await api.put('/documents/paye5', {
+        taxYear,
+        grossIncome:          parseDecimal(values.grossIncome),
+        payeDeducted:         parseDecimal(values.payeDeducted),
+        pensionContributions: parseDecimal(values.pensionContributions),
+        medicalContributions: parseDecimal(values.medicalContributions),
+        employerTin:          values.employerTin.trim() || undefined,
+      })
+      queryClient.invalidateQueries({ queryKey: ['paye5', taxYear] })
+      setHasOcrResult(false)
+      toast.success('PAYE5 saved')
     } catch (err) {
       toast.error(extractErrorMessage(err))
     } finally {
-      setSaving(false)
+      setSavingPaye5(false)
+    }
+  }
+
+  // Builds a save handler for a certificate section: persists that section's
+  // pending edits, refreshes its list and clears the edit buffer.
+  const handleSaveCert = (
+    apiPath:   string,
+    queryKey:  string,
+    edits:     Map<number, CertEdit>,
+    clearEdits: () => void,
+  ) => async () => {
+    try {
+      for (const [id, edit] of edits) {
+        await api.put(`/documents/${apiPath}/${id}`, {
+          amount: parseDecimal(edit.amount),
+          name:   edit.name.trim() || undefined,
+        })
+      }
+      queryClient.invalidateQueries({ queryKey: [queryKey, taxYear] })
+      clearEdits()
+      toast.success('Saved')
+    } catch (err) {
+      toast.error(extractErrorMessage(err))
     }
   }
 
@@ -203,21 +200,9 @@ export default function DocumentsPage() {
           <p className="page-subtitle">Upload your tax certificates — TaxFuse extracts the figures via OCR</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <select
-            value={taxYear}
-            onChange={(e) => handleTaxYearChange(e.target.value)}
-            className="input w-auto text-sm"
-          >
-            {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-teal flex items-center gap-2"
-          >
-            {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-            Save
-          </button>
+          <span className="text-sm text-slate-500 self-center">
+            Tax year: <span className="font-semibold text-navy">{taxYear}</span>
+          </span>
         </div>
       </div>
 
@@ -362,6 +347,17 @@ export default function DocumentsPage() {
                     className="input flex-1 font-mono text-sm"
                   />
                 </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={handleSavePaye5}
+                    disabled={savingPaye5}
+                    className="btn-teal flex items-center gap-2"
+                  >
+                    {savingPaye5 ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                    Save PAYE5
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -381,6 +377,7 @@ export default function DocumentsPage() {
           edits={retirementEdits}
           onEditChange={setCertEdit(setRetirementEdits)}
           onDeleted={removeCertEdit(setRetirementEdits)}
+          onSave={handleSaveCert('retirement-fund', 'cert-retirement-fund', retirementEdits, () => setRetirementEdits(new Map()))}
         />
         <SimpleCertCard
           title="Certificate i.r.o Study Policy"
@@ -390,6 +387,7 @@ export default function DocumentsPage() {
           edits={studyEdits}
           onEditChange={setCertEdit(setStudyEdits)}
           onDeleted={removeCertEdit(setStudyEdits)}
+          onSave={handleSaveCert('study-policy', 'cert-study-policy', studyEdits, () => setStudyEdits(new Map()))}
         />
       </div>
     </div>
@@ -406,16 +404,23 @@ interface SimpleCertCardProps {
   edits:        Map<number, CertEdit>
   onEditChange: (id: number, field: 'amount' | 'name', value: string) => void
   onDeleted:    (id: number) => void
+  onSave:       () => Promise<void>
 }
 
 function SimpleCertCard({
-  title, apiPath, queryKey, taxYear, edits, onEditChange, onDeleted,
+  title, apiPath, queryKey, taxYear, edits, onEditChange, onDeleted, onSave,
 }: SimpleCertCardProps) {
   const queryClient = useQueryClient()
   const fileRef     = useRef<HTMLInputElement>(null)
 
   const [uploading, setUploading] = useState(false)
+  const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
+
+  const handleSave = async () => {
+    setSaving(true)
+    try { await onSave() } finally { setSaving(false) }
+  }
 
   const { data } = useQuery({
     queryKey: [queryKey, taxYear],
@@ -534,6 +539,17 @@ function SimpleCertCard({
             <span className="text-sm font-semibold text-navy font-mono">
               N$ {liveTotal.toLocaleString('en-NA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button
+              onClick={handleSave}
+              disabled={saving || edits.size === 0}
+              className="btn-teal flex items-center gap-2 text-sm"
+            >
+              {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+              Save
+            </button>
           </div>
         </div>
       )}

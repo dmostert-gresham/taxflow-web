@@ -3,9 +3,9 @@ import { useMutation } from '@tanstack/react-query'
 import { Upload, RefreshCw, Calculator, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, TrialBalanceResult, CITCalculation } from '../../types'
+import { useTaxYearStore } from '../../stores/taxYearStore'
 import toast from 'react-hot-toast'
 
-const TAX_YEARS  = ['2024/25', '2023/24', '2022/23']
 const TAX_LINES  = [
   'TRADING_INCOME', 'SERVICE_INCOME', 'OTHER_INCOME',
   'COST_OF_SALES', 'SALARIES_AND_WAGES', 'RENT_EXPENSE',
@@ -15,7 +15,7 @@ const TAX_LINES  = [
 
 export default function TrialBalancePage() {
   const fileRef    = useRef<HTMLInputElement>(null)
-  const [taxYear, setTaxYear] = useState(TAX_YEARS[0])
+  const taxYear = useTaxYearStore((s) => s.taxYear)
   const [accounts, setAccounts] = useState<TrialBalanceResult['accounts']>([])
   const [cit, setCit] = useState<CITCalculation | null>(null)
   const [step, setStep] = useState<1 | 2 | 3>(1)
@@ -100,13 +100,9 @@ export default function TrialBalancePage() {
           </p>
 
           <div className="flex items-center gap-3">
-            <select
-              value={taxYear}
-              onChange={(e) => setTaxYear(e.target.value)}
-              className="input w-auto"
-            >
-              {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
+            <span className="text-sm text-slate-500">
+              Tax year: <span className="font-semibold text-navy">{taxYear}</span>
+            </span>
 
             <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden" onChange={handleFile} />
             <button

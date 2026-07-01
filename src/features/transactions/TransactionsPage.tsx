@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, Transaction } from '../../types'
+import { useTaxYearStore } from '../../stores/taxYearStore'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -585,6 +586,7 @@ function YearSection({
 export default function TransactionsPage() {
   const queryClient = useQueryClient()
   const fileRef     = useRef<HTMLInputElement>(null)
+  const taxYear     = useTaxYearStore((s) => s.taxYear)
 
   const [importFile,    setImportFile]    = useState<File | null>(null)
   const [taxOnly,       setTaxOnly]       = useState(false)
@@ -736,6 +738,7 @@ export default function TransactionsPage() {
   const classifiedCount = transactions.filter((t) => t.status === 'CLASSIFIED').length
 
   const displayed = transactions
+    .filter((t) => (t.taxYear ?? '') === taxYear)
     .filter((t) => !taxOnly || (t.category && TAX_RELEVANT_CATEGORIES.has(t.category)))
     .filter((t) => !filterText    || t.description.toLowerCase().includes(filterText.toLowerCase()))
     .filter((t) => !filterCategory || t.category === filterCategory)
