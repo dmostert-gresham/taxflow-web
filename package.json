@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && cp dist/index.html dist/404.html",
-    "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "preview": "npm run build && wrangler dev",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.51.1",
@@ -25,6 +26,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.43.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^7.15.0",
@@ -38,6 +40,7 @@
     "serve": "^14.2.3",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.2.2",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "wrangler": "^4.107.0"
   }
 }
