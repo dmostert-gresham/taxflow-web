@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { queryClient } from '../api/queryClient'
 
 export interface AuthUser {
   id: number
@@ -52,6 +53,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.removeItem('auth_token')
     localStorage.removeItem('auth_user')
     localStorage.removeItem('auth_practitioner_session')
+    // Drop all cached query data so the next user who signs in never sees the
+    // previous user's transactions, returns, billing status, etc.
+    queryClient.clear()
     set({ token: null, user: null, isAuthenticated: false, practitionerSession: null })
   },
 
@@ -67,6 +71,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.setItem('auth_practitioner_session', JSON.stringify(session))
     localStorage.setItem('auth_token', clientToken)
     localStorage.setItem('auth_user', JSON.stringify(clientUser))
+    // Switching into a client account: clear the practitioner's cached data.
+    queryClient.clear()
     set({ token: clientToken, user: clientUser, practitionerSession: session })
   },
 
@@ -76,6 +82,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.setItem('auth_token', practitionerSession.token)
     localStorage.setItem('auth_user', JSON.stringify(practitionerSession.user))
     localStorage.removeItem('auth_practitioner_session')
+    // Switching back to the practitioner account: clear the client's cached data.
+    queryClient.clear()
     set({
       token: practitionerSession.token,
       user: practitionerSession.user,
