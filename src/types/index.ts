@@ -67,6 +67,9 @@ export interface TaxReturnModel {
   status: 'REFUND' | 'LIABILITY' | 'BREAK_EVEN'
   statusLabel: string
   effectiveTaxRate: number
+  // Provisional projection (present only for transaction-derived returns)
+  projectedAnnualNetTax?: number | null
+  monthsOfData?: number | null
 }
 
 // ─── Income summary (from classified transactions) ────────────────────────

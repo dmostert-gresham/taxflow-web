@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle, Download, Wand2,
   TrendingUp, TrendingDown, Minus, ArrowRight,
-  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle, Receipt, X,
+  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle, Receipt, X, CalendarClock,
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
 import type { ApiResponse, TaxReturnModel, DeductionSuggestion, IncomeSummary, Paye5Result, Transaction } from '../../types'
@@ -277,6 +277,7 @@ export default function ReturnsPage() {
                 <>
                   <StatusBanner data={data} />
                   <BreakdownCard data={data} hasPaye5={hasPaye5} taxYear={taxYear} />
+                  <ProvisionalProjectionCard data={data} />
                 </>
             ) : null}
           </div>
@@ -606,6 +607,79 @@ function BreakdownCard({ data, hasPaye5 = false, taxYear }: { data: TaxReturnMod
         />
       )}
     </>
+  )
+}
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function fmtDate(year: number, monthIndex: number, day: number): string {
+  return `${day} ${MONTH_ABBR[monthIndex]} ${year}`
+}
+
+/**
+ * Projects the two provisional payments and the final payment from the current monthly run-rate.
+ * The backend annualises the imported months of data into `projectedAnnualNetTax`; here we split it
+ * 50/50 across the two provisional payments and reconcile the balance as the final payment.
+ * Rendered only for transaction-derived returns (projection present).
+ */
+function ProvisionalProjectionCard({ data }: { data: TaxReturnModel }) {
+  const projected = data.projectedAnnualNetTax
+  if (projected == null) return null
+
+  const months     = data.monthsOfData ?? 0
+  const prov1      = Math.round(projected / 2)
+  const prov2      = projected - prov1
+  const alreadyPaid = data.payeAlreadyPaid ?? 0
+  const finalRaw   = projected - prov1 - prov2 - alreadyPaid   // balance after both provisionals + tax paid
+  const finalDue   = Math.max(0, finalRaw)
+  const finalRefund = finalRaw < 0 ? -finalRaw : 0
+
+  const startYear  = parseInt(data.taxYear.slice(0, 4), 10)
+  const endYear    = startYear + 1
+  const lastFeb    = new Date(endYear, 2, 0).getDate() // 28 or 29
+
+  const rows = [
+    { label: '1st provisional payment', sub: `Due ${fmtDate(startYear, 7, 31)}`,       value: prov1 },
+    { label: '2nd provisional payment', sub: `Due ${fmtDate(endYear, 1, lastFeb)}`,     value: prov2 },
+    { label: 'Final payment',           sub: `Due ${fmtDate(endYear, 5, 30)}`,          value: finalDue },
+  ]
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+        <CalendarClock size={16} className="text-teal" />
+        <h2 className="section-title mb-0">Projected provisional &amp; final payment</h2>
+      </div>
+
+      <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+        <span className="text-sm text-slate-500">
+          Projected annual tax
+          <span className="text-slate-400"> · from {months} month{months === 1 ? '' : 's'} of data</span>
+        </span>
+        <span className="font-mono text-sm font-semibold text-navy">{formatNAD(projected)}</span>
+      </div>
+
+      <div className="divide-y divide-slate-50">
+        {rows.map(({ label, sub, value }) => (
+          <div key={label} className="flex items-center justify-between px-5 py-3">
+            <div className="min-w-0">
+              <div className="text-sm text-slate-600">{label}</div>
+              <div className="text-xs text-slate-400">{sub}</div>
+            </div>
+            <span className="font-mono text-sm font-medium text-navy">{formatNAD(value)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="px-5 py-3 text-xs text-slate-400 border-t border-slate-100">
+        {finalRefund > 0 && (
+          <div className="text-teal-dark mb-1">
+            Estimated refund of {formatNAD(finalRefund)} at filing (tax already withheld exceeds the balance).
+          </div>
+        )}
+        Estimate only — the two provisional payments cover the projected annual tax; the final payment
+        reconciles the balance at filing. Actual amounts depend on your full-year income.
+      </div>
+    </div>
   )
 }
 
