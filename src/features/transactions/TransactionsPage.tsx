@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import CsvImportModal from './CsvImportModal'
+import TransactionChatModal from './TransactionChatModal'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Upload, Zap, RefreshCw, AlertCircle,
   CheckCircle2, Clock, TrendingUp, TrendingDown, Pencil, X, Check,
-  Filter, ChevronDown, ChevronRight, Trash2, Search, SlidersHorizontal,
+  Filter, ChevronDown, ChevronRight, Trash2, Search, SlidersHorizontal, MessageSquare,
 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -368,6 +369,7 @@ function TransactionRow({
   onSavePercentage,
   onDelete,
   onReassign,
+  onChat,
 }: {
   tx: Transaction
   selected: boolean
@@ -376,6 +378,7 @@ function TransactionRow({
   onSavePercentage: (id: number, pct: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
   onReassign: (id: number, year: string) => Promise<void>
+  onChat: (tx: Transaction) => void
 }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting,   setDeleting]   = useState(false)
@@ -471,38 +474,49 @@ function TransactionRow({
         )}
       </td>
       <td className="table-cell w-px">
-        {confirming ? (
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-slate-500 whitespace-nowrap">Delete?</span>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="w-6 h-6 rounded bg-coral text-white flex items-center
-                         justify-center hover:bg-red-600 transition-colors"
-            >
-              {deleting
-                ? <RefreshCw size={10} className="animate-spin" />
-                : <Check size={10} />}
-            </button>
-            <button
-              onClick={() => setConfirming(false)}
-              className="w-6 h-6 rounded bg-slate-100 text-slate-500 flex items-center
-                         justify-center hover:bg-slate-200 transition-colors"
-            >
-              <X size={10} />
-            </button>
-          </div>
-        ) : (
+        <div className="flex items-center gap-1">
           <button
-            onClick={() => setConfirming(true)}
-            className="w-6 h-6 rounded text-slate-300 hover:text-coral hover:bg-red-50
+            onClick={() => onChat(tx)}
+            className="w-6 h-6 rounded text-slate-300 hover:text-navy hover:bg-navy/5
                        flex items-center justify-center opacity-0 group-hover:opacity-100
                        transition-all"
-            title="Remove transaction"
+            title="Chat with AI about this transaction"
           >
-            <Trash2 size={12} />
+            <MessageSquare size={12} />
           </button>
-        )}
+          {confirming ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-500 whitespace-nowrap">Delete?</span>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="w-6 h-6 rounded bg-coral text-white flex items-center
+                           justify-center hover:bg-red-600 transition-colors"
+              >
+                {deleting
+                  ? <RefreshCw size={10} className="animate-spin" />
+                  : <Check size={10} />}
+              </button>
+              <button
+                onClick={() => setConfirming(false)}
+                className="w-6 h-6 rounded bg-slate-100 text-slate-500 flex items-center
+                           justify-center hover:bg-slate-200 transition-colors"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="w-6 h-6 rounded text-slate-300 hover:text-coral hover:bg-red-50
+                         flex items-center justify-center opacity-0 group-hover:opacity-100
+                         transition-all"
+              title="Remove transaction"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   )
@@ -520,6 +534,7 @@ function YearSection({
   onSavePercentage,
   onDelete,
   onReassign,
+  onChat,
 }: {
   taxYear: string
   transactions: Transaction[]
@@ -530,9 +545,19 @@ function YearSection({
   onSavePercentage: (id: number, pct: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
   onReassign: (id: number, year: string) => Promise<void>
+  onChat: (tx: Transaction) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const selectAllRef = useRef<HTMLInputElement>(null)
+
+  const months = [...new Set(
+    transactions.map(tx => tx.transactionDate.substring(0, 7))
+  )].sort()
+
+  const visibleTransactions = selectedMonth
+    ? transactions.filter(tx => tx.transactionDate.startsWith(selectedMonth))
+    : transactions
 
   const yearIds       = transactions.map((t) => t.id)
   const selectedCount = yearIds.filter((id) => selectedIds.has(id)).length
@@ -578,7 +603,44 @@ function YearSection({
       </button>
 
       {!collapsed && (
-        <table className="w-full">
+        <>
+          {months.length > 1 && (
+            <div className="flex items-center gap-1 px-4 py-2.5 border-b border-slate-100 overflow-x-auto">
+              <button
+                onClick={() => setSelectedMonth(null)}
+                className={clsx(
+                  'px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
+                  selectedMonth === null
+                    ? 'bg-navy text-white'
+                    : 'text-slate-500 hover:bg-slate-100',
+                )}
+              >
+                All
+              </button>
+              {months.map((m) => {
+                const [y, mo] = m.split('-')
+                const label = new Date(Number(y), Number(mo) - 1, 1)
+                  .toLocaleDateString('en-NA', { month: 'short' })
+                const count = transactions.filter(tx => tx.transactionDate.startsWith(m)).length
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setSelectedMonth(m)}
+                    className={clsx(
+                      'px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
+                      selectedMonth === m
+                        ? 'bg-navy text-white'
+                        : 'text-slate-500 hover:bg-slate-100',
+                    )}
+                  >
+                    {label}
+                    <span className="ml-1 opacity-60">({count})</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <table className="w-full">
           <thead>
             <tr className="bg-white border-b border-slate-100">
               <th className="table-header w-px" onClick={(e) => e.stopPropagation()}>
@@ -603,7 +665,7 @@ function YearSection({
             </tr>
           </thead>
           <tbody>
-            {transactions.map((tx) => (
+            {visibleTransactions.map((tx) => (
               <TransactionRow
                 key={tx.id}
                 tx={tx}
@@ -613,10 +675,12 @@ function YearSection({
                 onSavePercentage={onSavePercentage}
                 onDelete={onDelete}
                 onReassign={onReassign}
+                onChat={onChat}
               />
             ))}
           </tbody>
         </table>
+        </>
       )}
     </div>
   )
@@ -630,6 +694,7 @@ export default function TransactionsPage() {
   const taxYear     = useTaxYearStore((s) => s.taxYear)
 
   const [importFile,    setImportFile]    = useState<File | null>(null)
+  const [chatTx,        setChatTx]        = useState<Transaction | null>(null)
   const [taxOnly,       setTaxOnly]       = useState(false)
   const [selectedIds,   setSelectedIds]   = useState<Set<number>>(() => new Set())
   const [bulkCategory,  setBulkCategory]  = useState('')
@@ -1087,6 +1152,7 @@ export default function TransactionsPage() {
                 onSavePercentage={handleSavePercentage}
                 onDelete={handleDelete}
                 onReassign={handleReassign}
+                onChat={(tx) => setChatTx(tx)}
               />
             ))}
           </div>
@@ -1098,6 +1164,14 @@ export default function TransactionsPage() {
           file={importFile}
           onClose={() => setImportFile(null)}
           onSuccess={handleImportSuccess}
+        />
+      )}
+
+      {chatTx && (
+        <TransactionChatModal
+          transaction={chatTx}
+          taxYear={taxYear}
+          onClose={() => setChatTx(null)}
         />
       )}
 

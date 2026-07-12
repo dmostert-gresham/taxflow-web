@@ -21,11 +21,14 @@ function greeting() {
   return 'Good evening'
 }
 
-function daysUntilDeadline() {
+function daysUntilDeadline(): { days: number; year: number } {
   const deadline = new Date(`${new Date().getFullYear()}-06-30`)
   const now = new Date()
   if (deadline < now) deadline.setFullYear(deadline.getFullYear() + 1)
-  return Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  return {
+    days: Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+    year: deadline.getFullYear(),
+  }
 }
 
 export default function DashboardPage() {
@@ -95,7 +98,7 @@ export default function DashboardPage() {
     },
   })
 
-  const days     = daysUntilDeadline()
+  const { days, year: deadlineYear } = daysUntilDeadline()
   const firstName = user?.fullName?.split(' ')[0] ?? 'there'
 
   return (
@@ -145,7 +148,7 @@ export default function DashboardPage() {
               {days}
             </div>
             <div className="text-slate-500 text-sm mt-1">days remaining</div>
-            <div className="text-slate-400 text-xs mt-1">30 June {new Date().getFullYear()}</div>
+            <div className="text-slate-400 text-xs mt-1">30 June {deadlineYear}</div>
           </div>
           <div className={clsx(
             'mt-4 text-xs font-medium px-3 py-1.5 rounded-full inline-block',
