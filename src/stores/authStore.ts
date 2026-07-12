@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { queryClient } from '../api/queryClient'
+import type { TaxpayerCategory } from '../types'
 
 export interface AuthUser {
   id: number
@@ -8,6 +9,7 @@ export interface AuthUser {
   role: string
   tin: string
   country: string
+  taxpayerCategory: TaxpayerCategory
 }
 
 interface PractitionerSession {

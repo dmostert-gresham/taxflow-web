@@ -74,8 +74,8 @@ export default function PractitionerClientsPage() {
       const res = await api.post<ApiResponse<AuthResponse>>(
         `/practitioner/clients/${client.id}/token`
       )
-      const { token, userId, email, fullName, role, tin, country } = res.data.data
-      impersonate(token, { id: userId, email, fullName, role, tin, country: country ?? 'NAMIBIA' })
+      const { token, userId, email, fullName, role, tin, country, taxpayerCategory } = res.data.data
+      impersonate(token, { id: userId, email, fullName, role, tin, country: country ?? 'NAMIBIA', taxpayerCategory: taxpayerCategory ?? 'PROVISIONAL' })
       navigate('/dashboard')
     } catch (err) {
       toast.error(extractErrorMessage(err))

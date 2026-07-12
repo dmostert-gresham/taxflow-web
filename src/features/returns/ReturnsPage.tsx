@@ -618,7 +618,7 @@ function fmtDate(year: number, monthIndex: number, day: number): string {
 /**
  * Projects the two provisional payments and the final payment from the current monthly run-rate.
  * The backend annualises the imported months of data into `projectedAnnualNetTax`; here we split it
- * 40% / 40% across the two provisional payments, with the remaining ~20% as the final payment
+ * 45% / 45% across the two provisional payments, with the remaining ~10% as the final payment
  * (reconciled against any tax already paid). Rendered only for transaction-derived returns.
  */
 function ProvisionalProjectionCard({ data }: { data: TaxReturnModel }) {
@@ -626,10 +626,10 @@ function ProvisionalProjectionCard({ data }: { data: TaxReturnModel }) {
   if (projected == null) return null
 
   const months     = data.monthsOfData ?? 0
-  const prov1      = Math.round(projected * 0.4)
-  const prov2      = Math.round(projected * 0.4)
+  const prov1      = Math.round(projected * 0.45)
+  const prov2      = Math.round(projected * 0.45)
   const alreadyPaid = data.payeAlreadyPaid ?? 0
-  const finalRaw   = projected - prov1 - prov2 - alreadyPaid   // remaining ~20% less any tax already paid
+  const finalRaw   = projected - prov1 - prov2 - alreadyPaid   // remaining ~10% less any tax already paid
   const finalDue   = Math.max(0, finalRaw)
   const finalRefund = finalRaw < 0 ? -finalRaw : 0
 
@@ -676,8 +676,8 @@ function ProvisionalProjectionCard({ data }: { data: TaxReturnModel }) {
             Estimated refund of {formatNAD(finalRefund)} at filing (tax already withheld exceeds the balance).
           </div>
         )}
-        Estimate only — the two provisional payments cover ~80% of the projected annual tax and the
-        final payment the remaining ~20%, reconciled at filing. Actual amounts depend on your full-year income.
+        Estimate only — the two provisional payments cover ~90% of the projected annual tax and the
+        final payment the remaining ~10%, reconciled at filing. Actual amounts depend on your full-year income.
       </div>
     </div>
   )

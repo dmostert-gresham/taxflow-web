@@ -11,6 +11,8 @@ export interface LoginRequest  { email: string; password: string }
 export interface RegisterRequest {
   email: string; password: string; fullName: string; role: string; tin: string
 }
+export type TaxpayerCategory = 'PAYE_ONLY' | 'PAYE_ADDITIONAL' | 'PROVISIONAL'
+
 export interface AuthResponse {
   token: string
   userId: number
@@ -19,6 +21,7 @@ export interface AuthResponse {
   role: string
   tin: string
   country: string
+  taxpayerCategory: TaxpayerCategory
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────

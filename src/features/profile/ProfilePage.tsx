@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
-import { User, Mail, Hash, Calendar, Trash2, AlertTriangle, ShieldCheck, FileText, Globe } from 'lucide-react'
+import { User, Mail, Hash, Calendar, Trash2, AlertTriangle, ShieldCheck, FileText, Globe, Briefcase } from 'lucide-react'
 import { api } from '../../api/client'
 import { useAuthStore } from '../../stores/authStore'
-import type { ApiResponse } from '../../types'
+import type { ApiResponse, TaxpayerCategory } from '../../types'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -15,12 +15,32 @@ interface UserProfile {
   tin: string
   role: string
   country: string
+  taxpayerCategory: TaxpayerCategory
   createdAt: string
 }
+
+const CATEGORY_OPTIONS: { value: TaxpayerCategory; label: string; description: string }[] = [
+  {
+    value: 'PAYE_ONLY',
+    label: 'PAYE Only',
+    description: 'Employment income only — upload PAYE5, no bank statement import',
+  },
+  {
+    value: 'PAYE_ADDITIONAL',
+    label: 'PAYE + Additional income',
+    description: 'Employment income plus freelance, rental, or other income',
+  },
+  {
+    value: 'PROVISIONAL',
+    label: 'Provisional taxpayer',
+    description: 'Self-employed or no PAYE — income derived from transactions',
+  },
+]
 
 export default function ProfilePage() {
   const { logout } = useAuthStore()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [confirmText, setConfirmText]           = useState('')
@@ -32,6 +52,17 @@ export default function ProfilePage() {
       const res = await api.get<ApiResponse<UserProfile>>('/users/me')
       return res.data.data
     },
+  })
+
+  const categoryMutation = useMutation({
+    mutationFn: (taxpayerCategory: TaxpayerCategory) =>
+      api.put('/users/me/taxpayer-category', { taxpayerCategory }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+      queryClient.invalidateQueries({ queryKey: ['me'] })
+      toast.success('Taxpayer type updated')
+    },
+    onError: () => toast.error('Could not update taxpayer type'),
   })
 
   const handleDeleteAccount = async () => {
@@ -106,6 +137,41 @@ export default function ProfilePage() {
             <DetailRow icon={<Calendar size={15} className="text-slate-400" />} label="Member since">
               {memberSince}
             </DetailRow>
+          </div>
+
+          {/* Taxpayer Type */}
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Briefcase size={15} className="text-slate-400" />
+              <span className="text-sm font-semibold text-slate-700">Taxpayer type</span>
+            </div>
+            <div className="space-y-2">
+              {CATEGORY_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    if (opt.value !== profile.taxpayerCategory) {
+                      categoryMutation.mutate(opt.value)
+                    }
+                  }}
+                  disabled={categoryMutation.isPending}
+                  className={clsx(
+                    'w-full text-left rounded-xl border px-4 py-3 transition-colors',
+                    profile.taxpayerCategory === opt.value
+                      ? 'border-navy bg-navy/5'
+                      : 'border-slate-200 hover:border-slate-300',
+                  )}
+                >
+                  <div className={clsx(
+                    'text-sm font-medium',
+                    profile.taxpayerCategory === opt.value ? 'text-navy' : 'text-slate-700',
+                  )}>
+                    {opt.label}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">{opt.description}</div>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Privacy & Legal */}

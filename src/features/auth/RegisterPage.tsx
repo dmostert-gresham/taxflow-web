@@ -50,8 +50,8 @@ export default function RegisterPage() {
     setError('')
     try {
       const res = await api.post<ApiResponse<AuthResponse>>('/auth/register', form)
-      const { token, userId, email, fullName, role, tin, country } = res.data.data
-      login(token, { id: userId, email, fullName, role, tin, country: country ?? 'NAMIBIA' })
+      const { token, userId, email, fullName, role, tin, country, taxpayerCategory } = res.data.data
+      login(token, { id: userId, email, fullName, role, tin, country: country ?? 'NAMIBIA', taxpayerCategory: taxpayerCategory ?? 'PROVISIONAL' })
       toast.success('Account created!')
       navigate('/dashboard')
     } catch (err) {

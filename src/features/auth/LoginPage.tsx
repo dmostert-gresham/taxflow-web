@@ -27,8 +27,8 @@ export default function LoginPage() {
       const res = await api.post<ApiResponse<AuthResponse>>('/auth/login', {
         email, password,
       })
-      const { token, userId, email: userEmail, fullName, role, tin, country } = res.data.data
-      login(token, { id: userId, email: userEmail, fullName, role, tin, country: country ?? 'NAMIBIA' })
+      const { token, userId, email: userEmail, fullName, role, tin, country, taxpayerCategory } = res.data.data
+      login(token, { id: userId, email: userEmail, fullName, role, tin, country: country ?? 'NAMIBIA', taxpayerCategory: taxpayerCategory ?? 'PROVISIONAL' })
       toast.success(`Welcome back, ${fullName.split(' ')[0]}!`)
       navigate('/dashboard')
     } catch (err) {

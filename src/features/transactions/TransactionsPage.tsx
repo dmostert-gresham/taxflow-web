@@ -13,6 +13,7 @@ import {
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, Transaction } from '../../types'
 import { useTaxYearStore, TAX_YEARS } from '../../stores/taxYearStore'
+import { useAuthStore } from '../../stores/authStore'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -692,6 +693,8 @@ export default function TransactionsPage() {
   const queryClient = useQueryClient()
   const fileRef     = useRef<HTMLInputElement>(null)
   const taxYear     = useTaxYearStore((s) => s.taxYear)
+  const taxpayerCategory = useAuthStore((s) => s.user?.taxpayerCategory ?? 'PROVISIONAL')
+  const isPayeOnly = taxpayerCategory === 'PAYE_ONLY'
 
   const [importFile,    setImportFile]    = useState<File | null>(null)
   const [chatTx,        setChatTx]        = useState<Transaction | null>(null)
@@ -902,14 +905,18 @@ export default function TransactionsPage() {
 
         {/* Action bar */}
         <div className="card p-4 flex items-center gap-3 flex-wrap">
-          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleUpload} />
-          <button
-              onClick={() => fileRef.current?.click()}
-              className="btn-primary flex items-center gap-2 text-sm"
-          >
-            <Upload size={15} />
-            Import Statement
-          </button>
+          {!isPayeOnly && (
+            <>
+              <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleUpload} />
+              <button
+                  onClick={() => fileRef.current?.click()}
+                  className="btn-primary flex items-center gap-2 text-sm"
+              >
+                <Upload size={15} />
+                Import Statement
+              </button>
+            </>
+          )}
 
           <button
               onClick={() => classifyMutation.mutate()}
@@ -1120,7 +1127,9 @@ export default function TransactionsPage() {
             <AlertCircle size={32} className="text-slate-200 mx-auto mb-3" />
             <p className="text-slate-500 text-sm">No transactions yet</p>
             <p className="text-slate-400 text-xs mt-1">
-              Import a CSV from FNB or Bank Windhoek to get started
+              {isPayeOnly
+                ? 'Upload your PAYE5 certificate on the Tax Return page'
+                : 'Import a CSV from FNB or Bank Windhoek to get started'}
             </p>
           </div>
         ) : displayed.length === 0 ? (
