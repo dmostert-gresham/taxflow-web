@@ -618,18 +618,18 @@ function fmtDate(year: number, monthIndex: number, day: number): string {
 /**
  * Projects the two provisional payments and the final payment from the current monthly run-rate.
  * The backend annualises the imported months of data into `projectedAnnualNetTax`; here we split it
- * 50/50 across the two provisional payments and reconcile the balance as the final payment.
- * Rendered only for transaction-derived returns (projection present).
+ * 40% / 40% across the two provisional payments, with the remaining ~20% as the final payment
+ * (reconciled against any tax already paid). Rendered only for transaction-derived returns.
  */
 function ProvisionalProjectionCard({ data }: { data: TaxReturnModel }) {
   const projected = data.projectedAnnualNetTax
   if (projected == null) return null
 
   const months     = data.monthsOfData ?? 0
-  const prov1      = Math.round(projected / 2)
-  const prov2      = projected - prov1
+  const prov1      = Math.round(projected * 0.4)
+  const prov2      = Math.round(projected * 0.4)
   const alreadyPaid = data.payeAlreadyPaid ?? 0
-  const finalRaw   = projected - prov1 - prov2 - alreadyPaid   // balance after both provisionals + tax paid
+  const finalRaw   = projected - prov1 - prov2 - alreadyPaid   // remaining ~20% less any tax already paid
   const finalDue   = Math.max(0, finalRaw)
   const finalRefund = finalRaw < 0 ? -finalRaw : 0
 
@@ -676,8 +676,8 @@ function ProvisionalProjectionCard({ data }: { data: TaxReturnModel }) {
             Estimated refund of {formatNAD(finalRefund)} at filing (tax already withheld exceeds the balance).
           </div>
         )}
-        Estimate only — the two provisional payments cover the projected annual tax; the final payment
-        reconciles the balance at filing. Actual amounts depend on your full-year income.
+        Estimate only — the two provisional payments cover ~80% of the projected annual tax and the
+        final payment the remaining ~20%, reconciled at filing. Actual amounts depend on your full-year income.
       </div>
     </div>
   )

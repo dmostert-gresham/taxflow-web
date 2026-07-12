@@ -35,6 +35,7 @@ export interface Transaction {
   category?: string
   status: 'RAW' | 'CLASSIFIED' | 'REVIEWED'
   deductiblePercentage?: number
+  originalTaxYear?: string | null   // date-derived year, set when reassigned to another period
 }
 
 // ─── Tax Return ───────────────────────────────────────────────────────────

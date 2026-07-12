@@ -11,7 +11,7 @@ import {
 } from 'recharts'
 import { api, formatNAD, extractErrorMessage } from '../../api/client'
 import type { ApiResponse, Transaction } from '../../types'
-import { useTaxYearStore } from '../../stores/taxYearStore'
+import { useTaxYearStore, TAX_YEARS } from '../../stores/taxYearStore'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -367,6 +367,7 @@ function TransactionRow({
   onSave,
   onSavePercentage,
   onDelete,
+  onReassign,
 }: {
   tx: Transaction
   selected: boolean
@@ -374,9 +375,11 @@ function TransactionRow({
   onSave: (id: number, category: string) => Promise<void>
   onSavePercentage: (id: number, pct: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
+  onReassign: (id: number, year: string) => Promise<void>
 }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting,   setDeleting]   = useState(false)
+  const [reassigning, setReassigning] = useState(false)
 
   const handleDelete = async () => {
     setDeleting(true)
@@ -398,10 +401,45 @@ function TransactionRow({
           className="w-3.5 h-3.5 accent-teal cursor-pointer"
         />
       </td>
-      <td className="table-cell text-slate-500 text-xs whitespace-nowrap">
-        {new Date(tx.transactionDate).toLocaleDateString('en-NA', {
-          day: '2-digit', month: 'short', year: 'numeric',
-        })}
+      <td className="table-cell text-slate-500 text-xs whitespace-nowrap"
+          onClick={(e) => e.stopPropagation()}>
+        <div>
+          {new Date(tx.transactionDate).toLocaleDateString('en-NA', {
+            day: '2-digit', month: 'short', year: 'numeric',
+          })}
+        </div>
+        {tx.originalTaxYear && tx.originalTaxYear !== tx.taxYear ? (
+          <button
+            onClick={() => {
+              if (reassigning) return
+              setReassigning(true)
+              onReassign(tx.id, tx.originalTaxYear!).finally(() => setReassigning(false))
+            }}
+            disabled={reassigning}
+            title={`Reassigned from ${tx.originalTaxYear} — click to reset to the date-based year`}
+            className="mt-0.5 text-[10px] text-amber-600 hover:text-amber-700 disabled:opacity-50"
+          >
+            ↩ moved from {tx.originalTaxYear}
+          </button>
+        ) : (
+          <select
+            value=""
+            onChange={(e) => {
+              const y = e.target.value
+              if (!y || reassigning) return
+              setReassigning(true)
+              onReassign(tx.id, y).finally(() => setReassigning(false))
+            }}
+            disabled={reassigning}
+            title="Move to a different tax year"
+            className="mt-0.5 block text-[10px] text-slate-400 bg-transparent border border-transparent
+                       hover:border-slate-200 rounded px-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100
+                       transition-opacity cursor-pointer"
+          >
+            <option value="">move…</option>
+            {TAX_YEARS.filter((y) => y !== tx.taxYear).map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        )}
       </td>
       <td className="table-cell max-w-xs">
         <span className="truncate block text-navy">{tx.description}</span>
@@ -481,6 +519,7 @@ function YearSection({
   onSave,
   onSavePercentage,
   onDelete,
+  onReassign,
 }: {
   taxYear: string
   transactions: Transaction[]
@@ -490,6 +529,7 @@ function YearSection({
   onSave: (id: number, category: string) => Promise<void>
   onSavePercentage: (id: number, pct: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
+  onReassign: (id: number, year: string) => Promise<void>
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -572,6 +612,7 @@ function YearSection({
                 onSave={onSave}
                 onSavePercentage={onSavePercentage}
                 onDelete={onDelete}
+                onReassign={onReassign}
               />
             ))}
           </tbody>
@@ -593,6 +634,7 @@ export default function TransactionsPage() {
   const [selectedIds,   setSelectedIds]   = useState<Set<number>>(() => new Set())
   const [bulkCategory,  setBulkCategory]  = useState('')
   const [bulkPercentage, setBulkPercentage] = useState('')
+  const [bulkTaxYear,   setBulkTaxYear]   = useState('')
   const [showFilters,   setShowFilters]   = useState(false)
   const [filterText,    setFilterText]    = useState('')
   const [filterCategory, setFilterCategory] = useState('')
@@ -684,6 +726,12 @@ export default function TransactionsPage() {
     toast.success('Transaction removed')
   }
 
+  const handleReassign = async (id: number, year: string) => {
+    await api.patch(`/statements/${id}/tax-year`, { taxYear: year })
+    queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    toast.success(`Moved to ${year}`)
+  }
+
   const toggleSelected = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -729,6 +777,22 @@ export default function TransactionsPage() {
       toast.success(`Deductible set to ${bulkPercentage}% on ${selectedIds.size} transactions`)
       setSelectedIds(new Set())
       setBulkPercentage('')
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    },
+    onError: (err) => toast.error(extractErrorMessage(err)),
+  })
+
+  const bulkTaxYearMutation = useMutation({
+    mutationFn: async () => {
+      await api.patch('/statements/tax-year', {
+        ids: [...selectedIds],
+        taxYear: bulkTaxYear,
+      })
+    },
+    onSuccess: () => {
+      toast.success(`Moved ${selectedIds.size} transaction${selectedIds.size === 1 ? '' : 's'} to ${bulkTaxYear}`)
+      setSelectedIds(new Set())
+      setBulkTaxYear('')
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
     },
     onError: (err) => toast.error(extractErrorMessage(err)),
@@ -1022,6 +1086,7 @@ export default function TransactionsPage() {
                 onSave={handleManualClassify}
                 onSavePercentage={handleSavePercentage}
                 onDelete={handleDelete}
+                onReassign={handleReassign}
               />
             ))}
           </div>
@@ -1101,6 +1166,24 @@ export default function TransactionsPage() {
                        px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap disabled:cursor-not-allowed"
           >
             {bulkPercentageMutation.isPending ? 'Applying…' : 'Set deductible %'}
+          </button>
+          <div className="h-4 w-px bg-white/20" />
+          <select
+            value={bulkTaxYear}
+            onChange={(e) => setBulkTaxYear(e.target.value)}
+            className="text-sm bg-white/10 text-white rounded-md px-2 py-1.5 border border-white/20
+                       focus:outline-none focus:ring-1 focus:ring-white/40"
+          >
+            <option value="">— Move to year —</option>
+            {TAX_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button
+            onClick={() => bulkTaxYearMutation.mutate()}
+            disabled={!bulkTaxYear || bulkTaxYearMutation.isPending}
+            className="bg-teal hover:bg-teal-dark disabled:opacity-40 text-white text-sm font-medium
+                       px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap disabled:cursor-not-allowed"
+          >
+            {bulkTaxYearMutation.isPending ? 'Moving…' : 'Move'}
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
