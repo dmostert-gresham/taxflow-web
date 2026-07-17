@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, Navigate, useLocation } from 'react-route
 import {
   LayoutDashboard, ArrowUpDown, FileText, FolderOpen,
   MessageSquare, Scale, CreditCard, LogOut, ChevronRight,
-  TrendingUp, ShieldCheck, Users, X,
+  TrendingUp, ShieldCheck, Users, X, Mail,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
@@ -187,6 +187,15 @@ export default function AppShell() {
                 <span>Billing</span>
               </NavLink>
             )}
+
+            {/* Feedback */}
+            <a
+              href="mailto:feedback@taxfuse.com.na"
+              className="sidebar-item text-slate-400 hover:text-slate-600"
+            >
+              <Mail size={17} className="shrink-0" />
+              <span>Send Feedback</span>
+            </a>
 
             {/* User */}
             <NavLink

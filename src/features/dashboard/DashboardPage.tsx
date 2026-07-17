@@ -10,6 +10,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { useTaxYearStore } from '../../stores/taxYearStore'
 import type { ApiResponse, TaxReturnModel, Paye5Result } from '../../types'
 import clsx from 'clsx'
+import TaxStatusCard from './TaxStatusCard'
 
 type Plan = 'BASIC' | 'PROFESSIONAL' | 'BUSINESS' | 'PRACTITIONER'
 const PLAN_RANK: Record<Plan, number> = { BASIC: 0, PROFESSIONAL: 1, BUSINESS: 2, PRACTITIONER: 3 }
@@ -134,6 +135,8 @@ export default function DashboardPage() {
           ) : null}
         </div>
 
+        {/* Deadline + ITAS status column */}
+        <div className="flex flex-col gap-4">
         {/* Deadline card */}
         <div className="card p-5 flex flex-col justify-between">
           <div className="flex items-center gap-2 mb-4">
@@ -160,6 +163,8 @@ export default function DashboardPage() {
           )}>
             {days <= 14 ? '⚠️ Urgent' : days <= 30 ? '📅 Coming up' : '✓ On track'}
           </div>
+        </div>
+        <TaxStatusCard />
         </div>
       </div>
 

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
-import { User, Mail, Hash, Calendar, Trash2, AlertTriangle, ShieldCheck, FileText, Globe, Briefcase } from 'lucide-react'
-import { api } from '../../api/client'
+import { User, Mail, Hash, Calendar, Trash2, AlertTriangle, ShieldCheck, FileText, Globe, Briefcase, KeyRound, Eye, EyeOff, Lock } from 'lucide-react'
+import { api, extractErrorMessage } from '../../api/client'
 import { useAuthStore } from '../../stores/authStore'
 import type { ApiResponse, TaxpayerCategory } from '../../types'
 import toast from 'react-hot-toast'
@@ -46,6 +46,11 @@ export default function ProfilePage() {
   const [confirmText, setConfirmText]           = useState('')
   const [deleting, setDeleting]                 = useState(false)
 
+  // ITAS credentials state
+  const [itasTin, setItasTin]           = useState('')
+  const [itasPassword, setItasPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: async () => {
@@ -63,6 +68,36 @@ export default function ProfilePage() {
       toast.success('Taxpayer type updated')
     },
     onError: () => toast.error('Could not update taxpayer type'),
+  })
+
+  const { data: itasStatus } = useQuery({
+    queryKey: ['itas-credentials-status'],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<{ stored: boolean; tin?: string; storedAt?: string }>>(
+        '/itas/credentials/status'
+      )
+      return res.data.data
+    },
+  })
+
+  const saveItasMutation = useMutation({
+    mutationFn: () => api.post('/itas/credentials', { tin: itasTin, password: itasPassword }),
+    onSuccess: () => {
+      toast.success('ITAS credentials saved securely')
+      setItasTin('')
+      setItasPassword('')
+      queryClient.invalidateQueries({ queryKey: ['itas-credentials-status'] })
+    },
+    onError: (err) => toast.error(extractErrorMessage(err)),
+  })
+
+  const deleteItasMutation = useMutation({
+    mutationFn: () => api.delete('/itas/credentials'),
+    onSuccess: () => {
+      toast.success('ITAS credentials cleared')
+      queryClient.invalidateQueries({ queryKey: ['itas-credentials-status'] })
+    },
+    onError: (err) => toast.error(extractErrorMessage(err)),
   })
 
   const handleDeleteAccount = async () => {
@@ -172,6 +207,89 @@ export default function ProfilePage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* ITAS Credentials */}
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <KeyRound size={15} className="text-slate-400" />
+              <span className="text-sm font-semibold text-slate-700">ITAS e-Portal credentials</span>
+            </div>
+
+            {itasStatus?.stored ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 bg-teal/5 border border-teal/20 rounded-xl px-4 py-3">
+                  <Lock size={14} className="text-teal-dark shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-navy">
+                      TIN: {itasStatus.tin}
+                    </div>
+                    {itasStatus.storedAt && (
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        Saved {new Date(itasStatus.storedAt).toLocaleDateString('en-NA', {
+                          day: 'numeric', month: 'long', year: 'numeric',
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-xs font-medium text-teal-dark bg-teal/10 px-2 py-0.5 rounded-full">
+                    Encrypted
+                  </div>
+                </div>
+                <button
+                  onClick={() => deleteItasMutation.mutate()}
+                  disabled={deleteItasMutation.isPending}
+                  className="btn-outline text-sm text-red-500 border-red-200 hover:bg-red-50
+                             hover:text-red-600 hover:border-red-300 flex items-center gap-2"
+                >
+                  <Trash2 size={14} />
+                  {deleteItasMutation.isPending ? 'Clearing…' : 'Clear credentials'}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={itasTin}
+                  onChange={(e) => setItasTin(e.target.value)}
+                  placeholder="Tax Identification Number (TIN)"
+                  className="input w-full"
+                  inputMode="numeric"
+                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={itasPassword}
+                    onChange={(e) => setItasPassword(e.target.value)}
+                    placeholder="ITAS e-Portal password"
+                    className="input w-full pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                <button
+                  onClick={() => saveItasMutation.mutate()}
+                  disabled={saveItasMutation.isPending || !itasTin.trim() || !itasPassword.trim()}
+                  className={clsx(
+                    'btn-primary text-sm w-full',
+                    (saveItasMutation.isPending || !itasTin.trim() || !itasPassword.trim()) &&
+                      'opacity-50 cursor-not-allowed',
+                  )}
+                >
+                  {saveItasMutation.isPending ? 'Saving…' : 'Save credentials'}
+                </button>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Your password is encrypted with AES-256-GCM before being stored. It is only
+                  decrypted in memory during ITAS portal sessions and is never logged or transmitted
+                  to third parties. You can remove it at any time.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Privacy & Legal */}
