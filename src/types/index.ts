@@ -208,3 +208,15 @@ export interface ItasPreFillResponse {
   taxYear: number
   warnings?: string
 }
+
+export interface LabelValuePair {
+  label: string
+  value: string
+}
+
+export interface ItasTaxpayerStatement {
+  found: boolean
+  taxYear: number
+  fields: LabelValuePair[]
+  fetchedAt?: string
+}

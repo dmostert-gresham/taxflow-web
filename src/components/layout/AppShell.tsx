@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate, Navigate, useLocation } from 'react-route
 import {
   LayoutDashboard, ArrowUpDown, FileText, FolderOpen,
   MessageSquare, Scale, CreditCard, LogOut, ChevronRight,
-  TrendingUp, ShieldCheck, Users, X, Mail,
+  TrendingUp, ShieldCheck, Users, X, Mail, FileSpreadsheet,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
@@ -23,6 +23,7 @@ const NAV_ITEMS: {
 }[] = [
   { to: '/dashboard',            icon: LayoutDashboard, label: 'Dashboard',                       adminHide: true, practitionerHide: true },
   { to: '/returns',              icon: FileText,        label: 'Returns',      minPlan: 'BASIC',  adminHide: true, practitionerHide: true },
+  { to: '/taxpayer-statement',   icon: FileSpreadsheet, label: 'Taxpayer Statement', minPlan: 'BASIC', adminHide: true, practitionerHide: true },
   { to: '/documents',            icon: FolderOpen,      label: 'Documents',    minPlan: 'BASIC',  adminHide: true, practitionerHide: true },
   { to: '/transactions',         icon: ArrowUpDown,     label: 'Transactions', minPlan: 'PROFESSIONAL' },
   { to: '/assistant',            icon: MessageSquare,   label: 'AI Assistant', minPlan: 'PROFESSIONAL' },

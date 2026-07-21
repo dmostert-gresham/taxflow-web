@@ -30,11 +30,11 @@ api.interceptors.response.use(
   }
 )
 
-// Long-timeout instance for Playwright operations (ITAS pre-fill can take 2+ minutes)
+// Long-timeout instance for Playwright operations (ITAS is slow — runs can take several minutes)
 export const apiLong = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 180_000,
+  timeout: 360_000,
 })
 
 apiLong.interceptors.request.use((config) => {

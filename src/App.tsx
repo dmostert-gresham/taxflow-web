@@ -12,6 +12,7 @@ import AssistantPage from './features/assistant/AssistantPage'
 import BillingPage from './features/billing/BillingPage'
 import TrialBalancePage from './features/trial-balance/TrialBalancePage'
 import ItasPreFillPage from './features/returns/ItasPreFillPage'
+import TaxpayerStatementPage from './features/returns/TaxpayerStatementPage'
 import AdminUsersPage from './features/admin/AdminUsersPage'
 import ProfilePage from './features/profile/ProfilePage'
 import PractitionerClientsPage from './features/practitioner/PractitionerClientsPage'
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="transactions"  element={<TransactionsPage />} />
         <Route path="returns"       element={<ReturnsPage />} />
         <Route path="returns/itas"  element={<ItasPreFillPage />} />
+        <Route path="taxpayer-statement" element={<TaxpayerStatementPage />} />
         <Route path="documents"     element={<DocumentsPage />} />
         <Route path="assistant"     element={<AssistantPage />} />
         <Route path="trial-balance" element={<TrialBalancePage />} />
