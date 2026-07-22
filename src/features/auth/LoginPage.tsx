@@ -69,7 +69,7 @@ export default function LoginPage() {
               {[
                 { label: 'Time saved', value: '3+ hours' },
                 { label: 'Accuracy', value: '99%' },
-                { label: 'NamRA & SARS compliant', value: '✓' },
+                { label: 'NamRA compliant', value: '✓' },
                 { label: 'Data security', value: 'Bank-grade' },
               ].map(({ label, value }) => (
                   <div key={label} className="bg-white/5 rounded-xl p-4 border border-white/10">
