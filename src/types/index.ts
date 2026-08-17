@@ -216,7 +216,6 @@ export interface LabelValuePair {
 
 export interface ItasTaxpayerStatement {
   found: boolean
-  taxYear: number
   fields: LabelValuePair[]
   fetchedAt?: string
 }

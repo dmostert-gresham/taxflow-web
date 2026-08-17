@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
+import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CsvImportModal from './CsvImportModal'
 import TransactionChatModal from './TransactionChatModal'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -46,6 +47,7 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; emoji: str
   PROFESSIONAL_FEES:   { label: 'Professional Fees',     color: 'badge-blue',   emoji: '⚖️', hex: '#6AAED6', group: 'Deductions' },
   VEHICLE_BUSINESS:    { label: 'Vehicle (Business)',    color: 'badge-blue',   emoji: '🚘', hex: '#4A8FC0', group: 'Deductions' },
   TRAVEL_BUSINESS:     { label: 'Travel (Business)',     color: 'badge-blue',   emoji: '✈️', hex: '#3A7FAF', group: 'Deductions' },
+  RENTAL_EXPENSE:      { label: 'Rental Expenses',       color: 'badge-blue',   emoji: '🔧', hex: '#5A9FCF', group: 'Deductions' },
 
   // ── Personal / Non-deductible ─────────────────────────────────────────────
   GROCERIES:           { label: 'Groceries',             color: 'badge-gray',   emoji: '🛒', hex: '#94A3B8', group: 'Personal' },
@@ -80,7 +82,7 @@ const TAX_RELEVANT_CATEGORIES = new Set([
   'PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY',
   'STUDY_POLICY', 'STUDY_LOAN',
   'MEDICAL', 'DONATIONS',
-  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS',
+  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE',
 ])
 
 const ALL_CATEGORIES = Object.keys(CATEGORY_CONFIG)
@@ -91,7 +93,7 @@ const DEDUCTIBLE_CATEGORIES = new Set([
   'PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY',
   'STUDY_POLICY', 'STUDY_LOAN',
   'MEDICAL', 'DONATIONS',
-  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS',
+  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE',
 ])
 
 function CategoryBadge({ category }: { category?: string }) {
@@ -102,7 +104,7 @@ function CategoryBadge({ category }: { category?: string }) {
 
 // ─── Pie chart ────────────────────────────────────────────────────────────────
 
-function CategoryPieChart({ transactions }: { transactions: Transaction[] }) {
+const CategoryPieChart = memo(function CategoryPieChart({ transactions }: { transactions: Transaction[] }) {
   const classified = transactions.filter((t) => t.category)
 
   if (classified.length === 0) return null
@@ -175,7 +177,7 @@ function CategoryPieChart({ transactions }: { transactions: Transaction[] }) {
         </div>
       </div>
   )
-}
+})
 
 // ─── Inline category editor ───────────────────────────────────────────────────
 
@@ -362,7 +364,22 @@ function DeductibleCell({
 
 // ─── Transaction row with inline delete confirm ───────────────────────────────
 
-function TransactionRow({
+// Column widths shared between the header row and every body row — the table is laid
+// out with flexbox (not native table layout) so that body rows can be absolutely
+// positioned by the virtualizer, which means header/cell widths must be kept in sync
+// by hand instead of relying on the browser's automatic column sizing.
+const COLS = {
+  checkbox:    'w-10  shrink-0',
+  date:        'w-36  shrink-0',
+  description: 'flex-1 min-w-[20rem]',
+  category:    'w-60  shrink-0',
+  deductible:  'w-48  shrink-0',
+  amount:      'w-28  shrink-0',
+  type:        'w-24  shrink-0',
+  actions:     'w-40  shrink-0',
+}
+
+const TransactionRow = memo(function TransactionRow({
   tx,
   selected,
   onToggle,
@@ -371,6 +388,8 @@ function TransactionRow({
   onDelete,
   onReassign,
   onChat,
+  virtualRow,
+  measureElement,
 }: {
   tx: Transaction
   selected: boolean
@@ -380,6 +399,8 @@ function TransactionRow({
   onDelete: (id: number) => Promise<void>
   onReassign: (id: number, year: string) => Promise<void>
   onChat: (tx: Transaction) => void
+  virtualRow: VirtualItem
+  measureElement: (node: Element | null) => void
 }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting,   setDeleting]   = useState(false)
@@ -396,8 +417,19 @@ function TransactionRow({
   }
 
   return (
-    <tr className={clsx('transition-colors group', selected ? 'bg-teal/5' : 'hover:bg-slate-50')}>
-      <td className="table-cell w-px" onClick={(e) => e.stopPropagation()}>
+    <tr
+      ref={measureElement}
+      data-index={virtualRow.index}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${virtualRow.start}px)`,
+      }}
+      className={clsx('flex w-full transition-colors group', selected ? 'bg-teal/5' : 'hover:bg-slate-50')}
+    >
+      <td className={clsx('table-cell', COLS.checkbox)} onClick={(e) => e.stopPropagation()}>
         <input
           type="checkbox"
           checked={selected}
@@ -405,7 +437,7 @@ function TransactionRow({
           className="w-3.5 h-3.5 accent-teal cursor-pointer"
         />
       </td>
-      <td className="table-cell text-slate-500 text-xs whitespace-nowrap"
+      <td className={clsx('table-cell text-slate-500 text-xs whitespace-nowrap', COLS.date)}
           onClick={(e) => e.stopPropagation()}>
         <div>
           {new Date(tx.transactionDate).toLocaleDateString('en-NA', {
@@ -445,16 +477,16 @@ function TransactionRow({
           </select>
         )}
       </td>
-      <td className="table-cell max-w-xs">
+      <td className={clsx('table-cell', COLS.description)}>
         <span className="truncate block text-navy">{tx.description}</span>
       </td>
-      <td className="table-cell">
+      <td className={clsx('table-cell', COLS.category)}>
         <CategoryCell transaction={tx} onSave={onSave} />
       </td>
-      <td className="table-cell">
+      <td className={clsx('table-cell', COLS.deductible)}>
         <DeductibleCell transaction={tx} onSave={onSavePercentage} />
       </td>
-      <td className="table-cell text-right whitespace-nowrap">
+      <td className={clsx('table-cell text-right whitespace-nowrap', COLS.amount)}>
         <span className={clsx(
           'font-mono text-sm font-medium',
           tx.transactionType === 'CREDIT' ? 'text-teal-dark' : 'text-slate-700'
@@ -463,7 +495,7 @@ function TransactionRow({
           {formatNAD(Math.abs(tx.amount))}
         </span>
       </td>
-      <td className="table-cell">
+      <td className={clsx('table-cell', COLS.type)}>
         {tx.transactionType === 'CREDIT' ? (
           <span className="flex items-center gap-1 text-teal-dark text-xs">
             <TrendingUp size={12} /> Credit
@@ -474,7 +506,7 @@ function TransactionRow({
           </span>
         )}
       </td>
-      <td className="table-cell w-px">
+      <td className={clsx('table-cell', COLS.actions)}>
         <div className="flex items-center gap-1">
           <button
             onClick={() => onChat(tx)}
@@ -521,11 +553,11 @@ function TransactionRow({
       </td>
     </tr>
   )
-}
+})
 
 // ─── Year group section ───────────────────────────────────────────────────────
 
-function YearSection({
+const YearSection = memo(function YearSection({
   taxYear,
   transactions,
   selectedIds,
@@ -551,14 +583,22 @@ function YearSection({
   const [collapsed, setCollapsed] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
   const selectAllRef = useRef<HTMLInputElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  const months = [...new Set(
+  const months = useMemo(() => [...new Set(
     transactions.map(tx => tx.transactionDate.substring(0, 7))
-  )].sort()
+  )].sort(), [transactions])
 
-  const visibleTransactions = selectedMonth
-    ? transactions.filter(tx => tx.transactionDate.startsWith(selectedMonth))
-    : transactions
+  // No "All" option — default to the most recent month so a single tax year's
+  // full transaction history is never rendered into the table unbounded (this
+  // is what made scrolling non-responsive for years with many transactions).
+  const effectiveMonth = selectedMonth ?? months[months.length - 1] ?? null
+
+  const visibleTransactions = useMemo(() => (
+    effectiveMonth
+      ? transactions.filter(tx => tx.transactionDate.startsWith(effectiveMonth))
+      : transactions
+  ), [transactions, effectiveMonth])
 
   const yearIds       = transactions.map((t) => t.id)
   const selectedCount = yearIds.filter((id) => selectedIds.has(id)).length
@@ -568,6 +608,19 @@ function YearSection({
   useEffect(() => {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected
   }, [someSelected])
+
+  // Only the rows scrolled into view (plus a small overscan buffer) are ever mounted —
+  // this is what keeps a large month's transaction list scrolling smoothly.
+  const rowVirtualizer = useVirtualizer({
+    count: visibleTransactions.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 56,
+    overscan: 8,
+  })
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [effectiveMonth])
 
   return (
     <div className="card overflow-hidden">
@@ -607,17 +660,6 @@ function YearSection({
         <>
           {months.length > 1 && (
             <div className="flex items-center gap-1 px-4 py-2.5 border-b border-slate-100 overflow-x-auto">
-              <button
-                onClick={() => setSelectedMonth(null)}
-                className={clsx(
-                  'px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
-                  selectedMonth === null
-                    ? 'bg-navy text-white'
-                    : 'text-slate-500 hover:bg-slate-100',
-                )}
-              >
-                All
-              </button>
               {months.map((m) => {
                 const [y, mo] = m.split('-')
                 const label = new Date(Number(y), Number(mo) - 1, 1)
@@ -629,7 +671,7 @@ function YearSection({
                     onClick={() => setSelectedMonth(m)}
                     className={clsx(
                       'px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors',
-                      selectedMonth === m
+                      effectiveMonth === m
                         ? 'bg-navy text-white'
                         : 'text-slate-500 hover:bg-slate-100',
                     )}
@@ -641,10 +683,11 @@ function YearSection({
               })}
             </div>
           )}
-          <table className="w-full">
-          <thead>
-            <tr className="bg-white border-b border-slate-100">
-              <th className="table-header w-px" onClick={(e) => e.stopPropagation()}>
+          <div ref={scrollRef} className="overflow-auto max-h-[70vh]">
+          <table className="w-full grid">
+          <thead className="grid sticky top-0 z-10">
+            <tr className="flex w-full bg-white border-b border-slate-100">
+              <th className={clsx('table-header', COLS.checkbox)} onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   ref={selectAllRef}
@@ -653,39 +696,45 @@ function YearSection({
                   className="w-3.5 h-3.5 accent-teal cursor-pointer"
                 />
               </th>
-              <th className="table-header text-left">Date</th>
-              <th className="table-header text-left">Description</th>
-              <th className="table-header text-left">
+              <th className={clsx('table-header text-left', COLS.date)}>Date</th>
+              <th className={clsx('table-header text-left', COLS.description)}>Description</th>
+              <th className={clsx('table-header text-left', COLS.category)}>
                 Category
                 <span className="text-slate-300 font-normal ml-1.5 text-xs">hover to edit</span>
               </th>
-              <th className="table-header text-left whitespace-nowrap">Deductible %</th>
-              <th className="table-header text-right">Amount</th>
-              <th className="table-header text-left">Type</th>
-              <th className="table-header" />
+              <th className={clsx('table-header text-left whitespace-nowrap', COLS.deductible)}>Deductible %</th>
+              <th className={clsx('table-header text-right', COLS.amount)}>Amount</th>
+              <th className={clsx('table-header text-left', COLS.type)}>Type</th>
+              <th className={clsx('table-header', COLS.actions)} />
             </tr>
           </thead>
-          <tbody>
-            {visibleTransactions.map((tx) => (
-              <TransactionRow
-                key={tx.id}
-                tx={tx}
-                selected={selectedIds.has(tx.id)}
-                onToggle={onToggle}
-                onSave={onSave}
-                onSavePercentage={onSavePercentage}
-                onDelete={onDelete}
-                onReassign={onReassign}
-                onChat={onChat}
-              />
-            ))}
+          <tbody className="grid relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const tx = visibleTransactions[virtualRow.index]
+              return (
+                <TransactionRow
+                  key={tx.id}
+                  tx={tx}
+                  selected={selectedIds.has(tx.id)}
+                  onToggle={onToggle}
+                  onSave={onSave}
+                  onSavePercentage={onSavePercentage}
+                  onDelete={onDelete}
+                  onReassign={onReassign}
+                  onChat={onChat}
+                  virtualRow={virtualRow}
+                  measureElement={rowVirtualizer.measureElement}
+                />
+              )
+            })}
           </tbody>
         </table>
+        </div>
         </>
       )}
     </div>
   )
-}
+})
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -776,47 +825,49 @@ export default function TransactionsPage() {
     setImportFile(null)
   }
 
-  const handleManualClassify = async (id: number, category: string) => {
+  const handleManualClassify = useCallback(async (id: number, category: string) => {
     await api.patch(`/statements/${id}/category`, { category })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     toast.success('Category updated')
-  }
+  }, [queryClient])
 
-  const handleSavePercentage = async (id: number, pct: number) => {
+  const handleSavePercentage = useCallback(async (id: number, pct: number) => {
     await api.patch(`/statements/${id}/deductible-percentage`, { deductiblePercentage: pct })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     toast.success(`Deductible set to ${pct}%`)
-  }
+  }, [queryClient])
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = useCallback(async (id: number) => {
     await api.delete(`/statements/${id}`)
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     toast.success('Transaction removed')
-  }
+  }, [queryClient])
 
-  const handleReassign = async (id: number, year: string) => {
+  const handleReassign = useCallback(async (id: number, year: string) => {
     await api.patch(`/statements/${id}/tax-year`, { taxYear: year })
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     toast.success(`Moved to ${year}`)
-  }
+  }, [queryClient])
 
-  const toggleSelected = (id: number) => {
+  const toggleSelected = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
+  }, [])
 
-  const toggleYear = (ids: number[], checked: boolean) => {
+  const toggleYear = useCallback((ids: number[], checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
       if (checked) ids.forEach((id) => next.add(id))
       else ids.forEach((id) => next.delete(id))
       return next
     })
-  }
+  }, [])
+
+  const handleChat = useCallback((tx: Transaction) => setChatTx(tx), [])
 
   const bulkMutation = useMutation({
     mutationFn: async () => {
@@ -869,7 +920,7 @@ export default function TransactionsPage() {
   const rawCount        = transactions.filter((t) => t.status === 'RAW').length
   const classifiedCount = transactions.filter((t) => t.status === 'CLASSIFIED').length
 
-  const displayed = transactions
+  const displayed = useMemo(() => transactions
     .filter((t) => (t.taxYear ?? '') === taxYear)
     .filter((t) => !taxOnly || (t.category && TAX_RELEVANT_CATEGORIES.has(t.category)))
     .filter((t) => !filterText    || t.description.toLowerCase().includes(filterText.toLowerCase()))
@@ -878,16 +929,18 @@ export default function TransactionsPage() {
     .filter((t) => !filterDateFrom || t.transactionDate >= filterDateFrom)
     .filter((t) => !filterDateTo   || t.transactionDate <= filterDateTo)
     .filter((t) => !filterAmtMin   || Math.abs(t.amount) >= parseFloat(filterAmtMin))
-    .filter((t) => !filterAmtMax   || Math.abs(t.amount) <= parseFloat(filterAmtMax))
+    .filter((t) => !filterAmtMax   || Math.abs(t.amount) <= parseFloat(filterAmtMax)),
+  [transactions, taxYear, taxOnly, filterText, filterCategory, filterType,
+   filterDateFrom, filterDateTo, filterAmtMin, filterAmtMax])
 
   // Group by tax year, most recent first
-  const byYear = displayed.reduce<Record<string, Transaction[]>>((acc, tx) => {
+  const byYear = useMemo(() => displayed.reduce<Record<string, Transaction[]>>((acc, tx) => {
     const yr = tx.taxYear ?? 'Unknown'
     if (!acc[yr]) acc[yr] = []
     acc[yr].push(tx)
     return acc
-  }, {})
-  const years = Object.keys(byYear).sort().reverse()
+  }, {}), [displayed])
+  const years = useMemo(() => Object.keys(byYear).sort().reverse(), [byYear])
 
   return (
       <>
@@ -1161,7 +1214,7 @@ export default function TransactionsPage() {
                 onSavePercentage={handleSavePercentage}
                 onDelete={handleDelete}
                 onReassign={handleReassign}
-                onChat={(tx) => setChatTx(tx)}
+                onChat={handleChat}
               />
             ))}
           </div>

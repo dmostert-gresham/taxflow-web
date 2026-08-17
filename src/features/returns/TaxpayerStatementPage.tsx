@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { KeyRound, RefreshCw, Loader2, AlertCircle, FileSpreadsheet, Info } from 'lucide-react'
+import { KeyRound, RefreshCw, Loader2, AlertCircle, FileSpreadsheet } from 'lucide-react'
 import { api, apiLong, extractErrorMessage } from '../../api/client'
-import { useTaxYearStore } from '../../stores/taxYearStore'
 import type { ApiResponse, ItasTaxpayerStatement } from '../../types'
 import clsx from 'clsx'
 
@@ -34,9 +33,6 @@ function explanationFor(label: string): string | undefined {
 }
 
 export default function TaxpayerStatementPage() {
-  const TAX_YEAR = useTaxYearStore((s) => s.taxYear)
-  // TAX_YEAR is "2025/26" — backend expects the integer start year (2025)
-  const taxYearInt = parseInt(TAX_YEAR.split('/')[0], 10)
   const queryClient = useQueryClient()
 
   const [refreshing, setRefreshing] = useState(false)
@@ -56,12 +52,10 @@ export default function TaxpayerStatementPage() {
     isError,
     error,
   } = useQuery({
-    queryKey: ['taxpayer-statement', taxYearInt],
+    queryKey: ['taxpayer-statement'],
     queryFn: async () => {
       // apiLong: a cache miss makes the backend run a live ITAS fetch under the hood
-      const res = await apiLong.get<ApiResponse<ItasTaxpayerStatement>>(
-        `/itas/taxpayer-statement?taxYear=${taxYearInt}`
-      )
+      const res = await apiLong.get<ApiResponse<ItasTaxpayerStatement>>('/itas/taxpayer-statement')
       return res.data.data
     },
     enabled: credStatus?.stored === true,
@@ -72,10 +66,8 @@ export default function TaxpayerStatementPage() {
     setRefreshing(true)
     setRefreshError('')
     try {
-      const res = await apiLong.post<ApiResponse<ItasTaxpayerStatement>>(
-        `/itas/taxpayer-statement/refresh?taxYear=${taxYearInt}`
-      )
-      queryClient.setQueryData(['taxpayer-statement', taxYearInt], res.data.data)
+      const res = await apiLong.post<ApiResponse<ItasTaxpayerStatement>>('/itas/taxpayer-statement/refresh')
+      queryClient.setQueryData(['taxpayer-statement'], res.data.data)
     } catch (err) {
       setRefreshError(extractErrorMessage(err))
     } finally {
@@ -108,7 +100,7 @@ export default function TaxpayerStatementPage() {
       <div>
         <h1 className="page-title">Taxpayer Statement</h1>
         <p className="page-subtitle">
-          Your Taxpayer Statement from ITAS for {TAX_YEAR}
+          Your Taxpayer Statement from ITAS
         </p>
       </div>
 
@@ -160,21 +152,20 @@ export default function TaxpayerStatementPage() {
                 <span className="text-sm font-medium text-slate-600">No statement found</span>
               </div>
               <p className="text-slate-400 text-sm mb-4">
-                No Taxpayer Statement is cached for {TAX_YEAR} yet. Generate one from ITAS below.
+                No Taxpayer Statement is cached yet. Generate one from ITAS below.
               </p>
               <RefreshButton label="Generate from ITAS" />
             </div>
           ) : (
             <div className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-navy">Tax Year {statement.taxYear}</h2>
-                  {statement.fetchedAt && (
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Last refreshed {new Date(statement.fetchedAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
+                {statement.fetchedAt ? (
+                  <p className="text-xs text-slate-400">
+                    Last refreshed {new Date(statement.fetchedAt).toLocaleString()}
+                  </p>
+                ) : (
+                  <span />
+                )}
                 <RefreshButton />
               </div>
 
@@ -190,14 +181,10 @@ export default function TaxpayerStatementPage() {
                       return (
                         <tr key={i} className={clsx('border-b border-slate-50 last:border-0', i % 2 === 1 && 'bg-slate-50/50')}>
                           <td className="px-5 py-2.5 text-slate-500 w-1/2 align-top">
-                            <span className="inline-flex items-center gap-1.5">
-                              {field.label}
-                              {explanation && (
-                                <span title={explanation} className="inline-flex shrink-0 cursor-help">
-                                  <Info size={13} className="text-slate-300" />
-                                </span>
-                              )}
-                            </span>
+                            <div className="font-medium text-slate-600">{field.label}</div>
+                            {explanation && (
+                              <div className="text-xs text-slate-400 mt-0.5">{explanation}</div>
+                            )}
                           </td>
                           <td className="px-5 py-2.5 text-navy font-medium">{field.value}</td>
                         </tr>

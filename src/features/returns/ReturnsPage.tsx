@@ -533,7 +533,7 @@ function BreakdownCard({ data, hasPaye5 = false, taxYear }: { data: TaxReturnMod
   if (data.medicalExpenses           > 0) rows.push({ label: 'Medical Expenses',            value: -data.medicalExpenses,          type: 'deduction-item', categories: ['MEDICAL'] })
   if (data.donationsToApprovedBodies > 0) rows.push({ label: 'Donations',                   value: -data.donationsToApprovedBodies,type: 'deduction-item', categories: ['DONATIONS'] })
   if (data.studyLoanInterest         > 0) rows.push({ label: 'Study Loan Interest',         value: -data.studyLoanInterest,        type: 'deduction-item', categories: ['STUDY_LOAN'] })
-  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item', categories: ['HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS'] })
+  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item', categories: ['HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE'] })
 
   rows.push({ label: 'Taxable Income',              value:  data.taxableIncome,    type: 'subtotal' })
   rows.push({ label: 'Gross Tax',                   value:  data.grossTax,         type: 'tax' })
