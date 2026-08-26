@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, memo, type ReactNode } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 import CsvImportModal from './CsvImportModal'
 import TransactionChatModal from './TransactionChatModal'
@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Upload, Zap, RefreshCw, AlertCircle,
   CheckCircle2, Clock, TrendingUp, TrendingDown, Pencil, X, Check,
-  Filter, ChevronDown, ChevronRight, Trash2, Search, SlidersHorizontal, MessageSquare,
+  ChevronDown, ChevronRight, Trash2, Search, SlidersHorizontal, MessageSquare, Scale,
 } from 'lucide-react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -96,6 +96,57 @@ const DEDUCTIBLE_CATEGORIES = new Set([
   'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE',
 ])
 
+// ─── Tax view vs. Accounting view ───────────────────────────────────────────────
+// Every transaction has exactly one category — these two schemes are just different
+// ways of grouping the *same* categories: Tax view groups by tax relevance (the
+// `group` field on CATEGORY_CONFIG), Accounting view collapses that down to a plain
+// Income/Expenses ledger view. Category identity, labels, colors and badges never
+// change — only which optgroup/summary bucket a category is filed under.
+type ViewMode = 'TAX' | 'ACCOUNTING'
+
+// A few categories aren't spending or income at all (transfers between the user's
+// own accounts) and get pulled out of Expenses into their own group rather than
+// overstating either Income or Expenses.
+const ACCOUNTING_GROUP_OVERRIDE: Record<string, string> = {
+  CASH_WITHDRAWAL: 'Transfers & Loans',
+  SAVINGS_TRANSFER: 'Transfers & Loans',
+}
+
+const TAX_GROUP_TO_ACCOUNTING_GROUP: Record<string, string> = {
+  Income: 'Income',
+  Allowances: 'Income',
+  Deductions: 'Expenses',
+  Personal: 'Expenses',
+  Tax: 'Tax Payments',
+  Assets: 'Transfers & Loans',
+  Other: 'Other',
+}
+
+const GROUP_ORDER: Record<ViewMode, string[]> = {
+  TAX: ['Income', 'Allowances', 'Deductions', 'Personal', 'Tax', 'Assets', 'Other'],
+  ACCOUNTING: ['Income', 'Expenses', 'Tax Payments', 'Transfers & Loans', 'Other'],
+}
+
+function groupLabel(cat: string, viewMode: ViewMode): string {
+  const taxGroup = CATEGORY_CONFIG[cat]?.group ?? 'Other'
+  if (viewMode === 'TAX') return taxGroup
+  return ACCOUNTING_GROUP_OVERRIDE[cat] ?? TAX_GROUP_TO_ACCOUNTING_GROUP[taxGroup] ?? 'Other'
+}
+
+// Shared by every dropdown that lets a user pick a category (inline row editor,
+// filter panel, bulk-classify bar) so the two view modes can't drift out of sync.
+function groupedCategoryOptions(viewMode: ViewMode): [string, string[]][] {
+  const groups = ALL_CATEGORIES.reduce<Record<string, string[]>>((acc, cat) => {
+    const group = groupLabel(cat, viewMode)
+    if (!acc[group]) acc[group] = []
+    acc[group].push(cat)
+    return acc
+  }, {})
+  return GROUP_ORDER[viewMode]
+    .filter((g) => groups[g]?.length)
+    .map((g) => [g, groups[g]] as [string, string[]])
+}
+
 function CategoryBadge({ category }: { category?: string }) {
   if (!category) return <span className="badge-gray">Unclassified</span>
   const cfg = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.OTHER
@@ -103,6 +154,22 @@ function CategoryBadge({ category }: { category?: string }) {
 }
 
 // ─── Pie chart ────────────────────────────────────────────────────────────────
+
+function SummaryStat({
+  label, value, icon, bg,
+}: {
+  label: string; value: string; icon: ReactNode; bg: string
+}) {
+  return (
+    <div className="card p-4">
+      <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center mb-3', bg)}>
+        {icon}
+      </div>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value text-xl">{value}</div>
+    </div>
+  )
+}
 
 const CategoryPieChart = memo(function CategoryPieChart({ transactions }: { transactions: Transaction[] }) {
   const classified = transactions.filter((t) => t.category)
@@ -184,9 +251,11 @@ const CategoryPieChart = memo(function CategoryPieChart({ transactions }: { tran
 function CategoryCell({
                         transaction,
                         onSave,
+                        viewMode,
                       }: {
   transaction: Transaction
   onSave: (id: number, category: string) => Promise<void>
+  viewMode: ViewMode
 }) {
   const [editing, setEditing] = useState(false)
   const [selected, setSelected] = useState(transaction.category ?? '')
@@ -216,14 +285,7 @@ function CategoryCell({
               autoFocus
           >
             <option value="">— Select category —</option>
-            {Object.entries(
-                ALL_CATEGORIES.reduce<Record<string, string[]>>((groups, cat) => {
-                  const group = CATEGORY_CONFIG[cat]?.group ?? 'Other'
-                  if (!groups[group]) groups[group] = []
-                  groups[group].push(cat)
-                  return groups
-                }, {})
-            ).map(([group, cats]) => (
+            {groupedCategoryOptions(viewMode).map(([group, cats]) => (
                 <optgroup key={group} label={group}>
                   {cats.map((cat) => (
                       <option key={cat} value={cat}>
@@ -257,12 +319,12 @@ function CategoryCell({
         <CategoryBadge category={transaction.category} />
         <button
             onClick={() => setEditing(true)}
-            className="w-5 h-5 rounded text-slate-300 hover:text-slate-500
+            className="w-6 h-6 rounded text-slate-400 hover:text-navy
                    hover:bg-slate-100 flex items-center justify-center
-                   opacity-0 group-hover:opacity-100 transition-all"
+                   transition-colors"
             title="Change category"
         >
-          <Pencil size={10} />
+          <Pencil size={12} />
         </button>
       </div>
   )
@@ -351,12 +413,12 @@ function DeductibleCell({
       </span>
       <button
         onClick={() => setEditing(true)}
-        className="w-5 h-5 rounded text-slate-300 hover:text-slate-500
+        className="w-6 h-6 rounded text-slate-400 hover:text-navy
                    hover:bg-slate-100 flex items-center justify-center
-                   opacity-0 group-hover:opacity-100 transition-all"
+                   transition-colors"
         title="Set deductible percentage"
       >
-        <Pencil size={10} />
+        <Pencil size={12} />
       </button>
     </div>
   )
@@ -376,7 +438,7 @@ const COLS = {
   deductible:  'w-48  shrink-0',
   amount:      'w-28  shrink-0',
   type:        'w-24  shrink-0',
-  actions:     'w-40  shrink-0',
+  actions:     'w-44  shrink-0',
 }
 
 const TransactionRow = memo(function TransactionRow({
@@ -390,6 +452,7 @@ const TransactionRow = memo(function TransactionRow({
   onChat,
   virtualRow,
   measureElement,
+  viewMode,
 }: {
   tx: Transaction
   selected: boolean
@@ -401,6 +464,7 @@ const TransactionRow = memo(function TransactionRow({
   onChat: (tx: Transaction) => void
   virtualRow: VirtualItem
   measureElement: (node: Element | null) => void
+  viewMode: ViewMode
 }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting,   setDeleting]   = useState(false)
@@ -481,7 +545,7 @@ const TransactionRow = memo(function TransactionRow({
         <span className="truncate block text-navy">{tx.description}</span>
       </td>
       <td className={clsx('table-cell', COLS.category)}>
-        <CategoryCell transaction={tx} onSave={onSave} />
+        <CategoryCell transaction={tx} onSave={onSave} viewMode={viewMode} />
       </td>
       <td className={clsx('table-cell', COLS.deductible)}>
         <DeductibleCell transaction={tx} onSave={onSavePercentage} />
@@ -510,12 +574,11 @@ const TransactionRow = memo(function TransactionRow({
         <div className="flex items-center gap-1">
           <button
             onClick={() => onChat(tx)}
-            className="w-6 h-6 rounded text-slate-300 hover:text-navy hover:bg-navy/5
-                       flex items-center justify-center opacity-0 group-hover:opacity-100
-                       transition-all"
+            className="w-7 h-7 rounded text-slate-400 hover:text-navy hover:bg-navy/5
+                       flex items-center justify-center transition-colors"
             title="Chat with AI about this transaction"
           >
-            <MessageSquare size={12} />
+            <MessageSquare size={14} />
           </button>
           {confirming ? (
             <div className="flex items-center gap-1">
@@ -523,30 +586,29 @@ const TransactionRow = memo(function TransactionRow({
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="w-6 h-6 rounded bg-coral text-white flex items-center
+                className="w-7 h-7 rounded bg-coral text-white flex items-center
                            justify-center hover:bg-red-600 transition-colors"
               >
                 {deleting
-                  ? <RefreshCw size={10} className="animate-spin" />
-                  : <Check size={10} />}
+                  ? <RefreshCw size={12} className="animate-spin" />
+                  : <Check size={12} />}
               </button>
               <button
                 onClick={() => setConfirming(false)}
-                className="w-6 h-6 rounded bg-slate-100 text-slate-500 flex items-center
+                className="w-7 h-7 rounded bg-slate-100 text-slate-500 flex items-center
                            justify-center hover:bg-slate-200 transition-colors"
               >
-                <X size={10} />
+                <X size={12} />
               </button>
             </div>
           ) : (
             <button
               onClick={() => setConfirming(true)}
-              className="w-6 h-6 rounded text-slate-300 hover:text-coral hover:bg-red-50
-                         flex items-center justify-center opacity-0 group-hover:opacity-100
-                         transition-all"
+              className="w-7 h-7 rounded text-slate-400 hover:text-coral hover:bg-red-50
+                         flex items-center justify-center transition-colors"
               title="Remove transaction"
             >
-              <Trash2 size={12} />
+              <Trash2 size={14} />
             </button>
           )}
         </div>
@@ -568,6 +630,7 @@ const YearSection = memo(function YearSection({
   onDelete,
   onReassign,
   onChat,
+  viewMode,
 }: {
   taxYear: string
   transactions: Transaction[]
@@ -579,6 +642,7 @@ const YearSection = memo(function YearSection({
   onDelete: (id: number) => Promise<void>
   onReassign: (id: number, year: string) => Promise<void>
   onChat: (tx: Transaction) => void
+  viewMode: ViewMode
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
@@ -724,6 +788,7 @@ const YearSection = memo(function YearSection({
                   onChat={onChat}
                   virtualRow={virtualRow}
                   measureElement={rowVirtualizer.measureElement}
+                  viewMode={viewMode}
                 />
               )
             })}
@@ -747,7 +812,7 @@ export default function TransactionsPage() {
 
   const [importFile,    setImportFile]    = useState<File | null>(null)
   const [chatTx,        setChatTx]        = useState<Transaction | null>(null)
-  const [taxOnly,       setTaxOnly]       = useState(false)
+  const [viewMode,      setViewMode]      = useState<ViewMode>('TAX')
   const [selectedIds,   setSelectedIds]   = useState<Set<number>>(() => new Set())
   const [bulkCategory,  setBulkCategory]  = useState('')
   const [bulkPercentage, setBulkPercentage] = useState('')
@@ -922,7 +987,9 @@ export default function TransactionsPage() {
 
   const displayed = useMemo(() => transactions
     .filter((t) => (t.taxYear ?? '') === taxYear)
-    .filter((t) => !taxOnly || (t.category && TAX_RELEVANT_CATEGORIES.has(t.category)))
+    // Tax view only ever shows transactions relevant to the return — Accounting
+    // view shows everything, tax-relevant or not.
+    .filter((t) => viewMode === 'ACCOUNTING' || (t.category && TAX_RELEVANT_CATEGORIES.has(t.category)))
     .filter((t) => !filterText    || t.description.toLowerCase().includes(filterText.toLowerCase()))
     .filter((t) => !filterCategory || t.category === filterCategory)
     .filter((t) => filterType === 'ALL' || t.transactionType === filterType)
@@ -930,8 +997,20 @@ export default function TransactionsPage() {
     .filter((t) => !filterDateTo   || t.transactionDate <= filterDateTo)
     .filter((t) => !filterAmtMin   || Math.abs(t.amount) >= parseFloat(filterAmtMin))
     .filter((t) => !filterAmtMax   || Math.abs(t.amount) <= parseFloat(filterAmtMax)),
-  [transactions, taxYear, taxOnly, filterText, filterCategory, filterType,
+  [transactions, taxYear, viewMode, filterText, filterCategory, filterType,
    filterDateFrom, filterDateTo, filterAmtMin, filterAmtMax])
+
+  // Totals per accounting/tax group for the summary row — reuses the same
+  // groupLabel() the category dropdowns use, so the two never drift apart.
+  const viewSummary = useMemo(() => {
+    const sums: Record<string, number> = {}
+    for (const t of displayed) {
+      if (!t.category) continue
+      const group = groupLabel(t.category, viewMode)
+      sums[group] = (sums[group] ?? 0) + Math.abs(t.amount)
+    }
+    return sums
+  }, [displayed, viewMode])
 
   // Group by tax year, most recent first
   const byYear = useMemo(() => displayed.reduce<Record<string, Transaction[]>>((acc, tx) => {
@@ -946,10 +1025,70 @@ export default function TransactionsPage() {
       <>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="page-title">Transactions</h1>
-          <p className="page-subtitle">Import and classify your bank transactions</p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="page-title">Transactions</h1>
+            <p className="page-subtitle">Import and classify your bank transactions</p>
+          </div>
+
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm font-medium shrink-0">
+            {(['TAX', 'ACCOUNTING'] as const).map((mode) => (
+              <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={clsx(
+                    'px-4 py-2 transition-colors',
+                    viewMode === mode ? 'bg-navy text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                  )}
+              >
+                {mode === 'TAX' ? 'Tax View' : 'Accounting View'}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* View summary */}
+        {displayed.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {viewMode === 'TAX' ? (
+              <>
+                <SummaryStat
+                  label="Income"
+                  value={formatNAD((viewSummary['Income'] ?? 0) + (viewSummary['Allowances'] ?? 0))}
+                  icon={<TrendingUp size={16} className="text-white" />}
+                  bg="bg-teal"
+                />
+                <SummaryStat
+                  label="Deductions"
+                  value={formatNAD(viewSummary['Deductions'] ?? 0)}
+                  icon={<Scale size={16} className="text-white" />}
+                  bg="bg-navy"
+                />
+              </>
+            ) : (
+              <>
+                <SummaryStat
+                  label="Total Income"
+                  value={formatNAD(viewSummary['Income'] ?? 0)}
+                  icon={<TrendingUp size={16} className="text-white" />}
+                  bg="bg-teal"
+                />
+                <SummaryStat
+                  label="Total Expenses"
+                  value={formatNAD(viewSummary['Expenses'] ?? 0)}
+                  icon={<TrendingDown size={16} className="text-white" />}
+                  bg="bg-coral"
+                />
+                <SummaryStat
+                  label="Net"
+                  value={formatNAD((viewSummary['Income'] ?? 0) - (viewSummary['Expenses'] ?? 0))}
+                  icon={<Scale size={16} className="text-white" />}
+                  bg="bg-navy"
+                />
+              </>
+            )}
+          </div>
+        )}
 
         {/* Pie chart */}
         {displayed.length > 0 && (
@@ -980,17 +1119,6 @@ export default function TransactionsPage() {
                 ? <RefreshCw size={15} className="animate-spin" />
                 : <Zap size={15} />}
             {classifyMutation.isPending ? 'Classifying…' : 'Classify with AI'}
-          </button>
-
-          <button
-              onClick={() => setTaxOnly((v) => !v)}
-              className={clsx(
-                'btn-outline flex items-center gap-2 text-sm transition-colors',
-                taxOnly && 'bg-navy/5 text-navy border-navy/30'
-              )}
-          >
-            <Filter size={15} />
-            {taxOnly ? 'Tax-relevant only' : 'All transactions'}
           </button>
 
           <button
@@ -1025,7 +1153,7 @@ export default function TransactionsPage() {
             )}
             <span>
               {displayed.length}
-              {(taxOnly || activeFilterCount > 0) ? ` of ${transactions.length}` : ''}
+              {(viewMode === 'TAX' || activeFilterCount > 0) ? ` of ${transactions.length}` : ''}
               {' '}total
             </span>
           </div>
@@ -1057,14 +1185,7 @@ export default function TransactionsPage() {
                   className="input text-sm w-full"
                 >
                   <option value="">All categories</option>
-                  {Object.entries(
-                    ALL_CATEGORIES.reduce<Record<string, string[]>>((groups, cat) => {
-                      const group = CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.group ?? 'Other'
-                      if (!groups[group]) groups[group] = []
-                      groups[group].push(cat)
-                      return groups
-                    }, {})
-                  ).map(([group, cats]) => (
+                  {groupedCategoryOptions(viewMode).map(([group, cats]) => (
                     <optgroup key={group} label={group}>
                       {cats.map((cat) => (
                         <option key={cat} value={cat}>
@@ -1190,9 +1311,11 @@ export default function TransactionsPage() {
             <SlidersHorizontal size={32} className="text-slate-200 mx-auto mb-3" />
             <p className="text-slate-500 text-sm">No matching transactions</p>
             <p className="text-slate-400 text-xs mt-1">
-              {activeFilterCount > 0 || taxOnly
+              {activeFilterCount > 0
                 ? 'Try adjusting or clearing your filters'
-                : 'No transactions to display'}
+                : viewMode === 'TAX'
+                  ? 'No tax-relevant transactions this year — switch to Accounting View to see everything'
+                  : 'No transactions to display'}
             </p>
             {activeFilterCount > 0 && (
               <button onClick={clearFilters} className="mt-3 text-xs text-teal hover:underline">
@@ -1215,6 +1338,7 @@ export default function TransactionsPage() {
                 onDelete={handleDelete}
                 onReassign={handleReassign}
                 onChat={handleChat}
+                viewMode={viewMode}
               />
             ))}
           </div>
@@ -1249,14 +1373,7 @@ export default function TransactionsPage() {
                        focus:outline-none focus:ring-1 focus:ring-white/40 min-w-[180px]"
           >
             <option value="">— Pick category —</option>
-            {Object.entries(
-              ALL_CATEGORIES.reduce<Record<string, string[]>>((groups, cat) => {
-                const group = CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG]?.group ?? 'Other'
-                if (!groups[group]) groups[group] = []
-                groups[group].push(cat)
-                return groups
-              }, {})
-            ).map(([group, cats]) => (
+            {groupedCategoryOptions(viewMode).map(([group, cats]) => (
               <optgroup key={group} label={group}>
                 {cats.map((cat) => (
                   <option key={cat} value={cat}>
