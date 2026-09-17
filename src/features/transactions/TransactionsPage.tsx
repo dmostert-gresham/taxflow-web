@@ -24,6 +24,7 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; emoji: str
   COMMISSION:          { label: 'Commission',           color: 'badge-green',  emoji: '💰', hex: '#00B085', group: 'Income' },
   FREELANCE_INCOME:    { label: 'Freelance',            color: 'badge-green',  emoji: '💻', hex: '#00A87E', group: 'Income' },
   RENTAL_INCOME:       { label: 'Rental Income',        color: 'badge-green',  emoji: '🏠', hex: '#00E0AA', group: 'Income' },
+  FARMING_INCOME:      { label: 'Farming Income',       color: 'badge-green',  emoji: '🌾', hex: '#4DDD9A', group: 'Income' },
   INTEREST_INCOME:     { label: 'Interest Income',      color: 'badge-green',  emoji: '📈', hex: '#5EDDB8', group: 'Income' },
   BUSINESS_INCOME:     { label: 'Business Income',      color: 'badge-green',  emoji: '🏢', hex: '#3DCCA0', group: 'Income' },
   GRATUITY:            { label: 'Gratuity / Bonus',     color: 'badge-green',  emoji: '🎁', hex: '#70D9B8', group: 'Income' },
@@ -43,11 +44,16 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; emoji: str
   STUDY_LOAN:          { label: 'Study Loan Interest',   color: 'badge-blue',   emoji: '📚', hex: '#60A0D8', group: 'Deductions' },
   MEDICAL:             { label: 'Medical',               color: 'badge-blue',   emoji: '🏥', hex: '#2E75B6', group: 'Deductions' },
   DONATIONS:           { label: 'Donations',             color: 'badge-blue',   emoji: '❤️', hex: '#7BBFE8', group: 'Deductions' },
+  // Donations to a non-approved body — never deductible. Kept visually next to
+  // DONATIONS (same icon) but muted, so it's clearly not one of the amounts deducted.
+  DONATIONS_NON_DEDUCTIBLE: { label: 'Donations (Non-Deductible)', color: 'badge-gray', emoji: '❤️', hex: '#B0BEC5', group: 'Deductions' },
   HOME_OFFICE:         { label: 'Home Office',           color: 'badge-blue',   emoji: '🏡', hex: '#A8D5F5', group: 'Deductions' },
   PROFESSIONAL_FEES:   { label: 'Professional Fees',     color: 'badge-blue',   emoji: '⚖️', hex: '#6AAED6', group: 'Deductions' },
   VEHICLE_BUSINESS:    { label: 'Vehicle (Business)',    color: 'badge-blue',   emoji: '🚘', hex: '#4A8FC0', group: 'Deductions' },
   TRAVEL_BUSINESS:     { label: 'Travel (Business)',     color: 'badge-blue',   emoji: '✈️', hex: '#3A7FAF', group: 'Deductions' },
   RENTAL_EXPENSE:      { label: 'Rental Expenses',       color: 'badge-blue',   emoji: '🔧', hex: '#5A9FCF', group: 'Deductions' },
+  FARMING_EXPENSE:     { label: 'Farming Expenses',      color: 'badge-blue',   emoji: '🚜', hex: '#6FAED8', group: 'Deductions' },
+  OTHER_DEDUCTION:     { label: 'Other Deduction',       color: 'badge-blue',   emoji: '🧾', hex: '#89B4D9', group: 'Deductions' },
 
   // ── Personal / Non-deductible ─────────────────────────────────────────────
   GROCERIES:           { label: 'Groceries',             color: 'badge-gray',   emoji: '🛒', hex: '#94A3B8', group: 'Personal' },
@@ -74,15 +80,20 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string; emoji: str
   OTHER:               { label: 'Other',                 color: 'badge-orange', emoji: '❓', hex: '#FF6B35', group: 'Other' },
 }
 
-// Categories that TaxReturnService actually uses in the calculation
+// Categories that TaxReturnService actually uses in the calculation — plus a couple
+// (MEDICAL, DONATIONS_NON_DEDUCTIBLE) that are structurally part of the same schedule
+// and shown here so a user can review/recategorise them, even though their amount never
+// enters the calculation for every jurisdiction (MEDICAL) or any jurisdiction
+// (DONATIONS_NON_DEDUCTIBLE).
 const TAX_RELEVANT_CATEGORIES = new Set([
-  'SALARY', 'COMMISSION', 'FREELANCE_INCOME', 'RENTAL_INCOME',
+  'SALARY', 'COMMISSION', 'FREELANCE_INCOME', 'RENTAL_INCOME', 'FARMING_INCOME',
   'INTEREST_INCOME', 'BUSINESS_INCOME', 'GRATUITY', 'OTHER_INCOME',
   'ENTERTAINMENT_ALLOWANCE', 'VEHICLE_ALLOWANCE', 'SUBSISTENCE_ALLOWANCE', 'HOUSING_ALLOWANCE',
   'PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY',
   'STUDY_POLICY', 'STUDY_LOAN',
-  'MEDICAL', 'DONATIONS',
-  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE',
+  'MEDICAL', 'DONATIONS', 'DONATIONS_NON_DEDUCTIBLE',
+  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE', 'FARMING_EXPENSE',
+  'OTHER_DEDUCTION',
 ])
 
 const ALL_CATEGORIES = Object.keys(CATEGORY_CONFIG)
@@ -93,8 +104,21 @@ const DEDUCTIBLE_CATEGORIES = new Set([
   'PENSION', 'PROVIDENT_FUND', 'RETIREMENT_ANNUITY',
   'STUDY_POLICY', 'STUDY_LOAN',
   'MEDICAL', 'DONATIONS',
-  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE',
+  'HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE', 'FARMING_EXPENSE',
+  'OTHER_DEDUCTION',
 ])
+
+// Deductible "in principle" but NOT for a Namibian individual — mirrors
+// TransactionCategory.NAMIBIA_NON_DEDUCTIBLE / isDeductible(country) on the backend.
+// An individual's own medical spend isn't deductible in Namibia (ITA s17(1)(o) covers
+// only an employer's contributions for employees), but is in South Africa.
+const NAMIBIA_NON_DEDUCTIBLE = new Set(['MEDICAL'])
+
+function isDeductibleForCountry(category: string, country: string | undefined): boolean {
+  if (!DEDUCTIBLE_CATEGORIES.has(category)) return false
+  if (country === 'SOUTH_AFRICA') return true
+  return !NAMIBIA_NON_DEDUCTIBLE.has(category)
+}
 
 // ─── Tax view vs. Accounting view ───────────────────────────────────────────────
 // Every transaction has exactly one category — these two schemes are just different
@@ -343,9 +367,12 @@ function DeductibleCell({
   const [editing, setEditing] = useState(false)
   const [value, setValue]     = useState(String(current))
   const [saving, setSaving]   = useState(false)
+  const country = useAuthStore((s) => s.user?.country)
 
-  // Only deductible-category transactions feed a deduction on the return.
-  if (!transaction.category || !DEDUCTIBLE_CATEGORIES.has(transaction.category)) {
+  // Only categories that actually feed a deduction on the return — for this user's
+  // jurisdiction — support an adjustable percentage (e.g. 60% business use of a
+  // vehicle). Medical is deductible in principle but not for a Namibian individual.
+  if (!transaction.category || !isDeductibleForCountry(transaction.category, country)) {
     return <span className="text-slate-300 text-xs">—</span>
   }
 

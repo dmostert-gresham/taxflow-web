@@ -49,6 +49,7 @@ export interface TaxReturnModel {
   commission?: number | null
   freelanceIncome?: number | null
   rentalIncome?: number | null
+  farmingIncome?: number | null
   interestIncome?: number | null
   businessIncome?: number | null
   allowanceIncome?: number | null
@@ -74,6 +75,19 @@ export interface TaxReturnModel {
   // Provisional projection (present only for transaction-derived returns)
   projectedAnnualNetTax?: number | null
   monthsOfData?: number | null
+  // Ring-fenced deductions — rental/trade expenses may only offset that basket's
+  // own income. Two entries (RENTAL, TRADE), always present even when all-zero.
+  ringFencedBaskets?: RingFencedBasket[]
+}
+
+export interface RingFencedBasket {
+  basket: 'RENTAL' | 'TRADE' | 'FARMING'
+  incomeLabel: string
+  income: number
+  expenses: number
+  lossCarriedForwardIn: number
+  allowedDeduction: number
+  excessCarriedForwardOut: number
 }
 
 // ─── Income summary (from classified transactions) ────────────────────────

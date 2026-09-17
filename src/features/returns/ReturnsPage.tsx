@@ -4,10 +4,10 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertCircle, Download, Wand2,
   TrendingUp, TrendingDown, Minus, ArrowRight,
-  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle, Receipt, X, CalendarClock,
+  Scale, BadgeCheck, RefreshCw, Trash2, AlertTriangle, Receipt, X, CalendarClock, ShieldCheck,
 } from 'lucide-react'
 import { api, formatNAD } from '../../api/client'
-import type { ApiResponse, TaxReturnModel, DeductionSuggestion, IncomeSummary, Paye5Result, Transaction } from '../../types'
+import type { ApiResponse, TaxReturnModel, RingFencedBasket, DeductionSuggestion, IncomeSummary, Paye5Result, Transaction } from '../../types'
 import { useTaxYearStore, TAX_YEARS } from '../../stores/taxYearStore'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
@@ -277,6 +277,7 @@ export default function ReturnsPage() {
                 <>
                   <StatusBanner data={data} />
                   <BreakdownCard data={data} hasPaye5={hasPaye5} taxYear={taxYear} />
+                  <RingFencedCard data={data} />
                   <ProvisionalProjectionCard data={data} />
                 </>
             ) : null}
@@ -521,6 +522,7 @@ function BreakdownCard({ data, hasPaye5 = false, taxYear }: { data: TaxReturnMod
     if ((data.commission     ?? 0) > 0) rows.push({ label: 'Commission',             value:  data.commission!,     type: 'income-item', categories: ['COMMISSION'] })
     if ((data.freelanceIncome ?? 0) > 0) rows.push({ label: 'Freelance / Contract', value:  data.freelanceIncome!, type: 'income-item', categories: ['FREELANCE_INCOME'] })
     if ((data.rentalIncome   ?? 0) > 0) rows.push({ label: 'Rental Income',          value:  data.rentalIncome!,   type: 'income-item', categories: ['RENTAL_INCOME'] })
+    if ((data.farmingIncome  ?? 0) > 0) rows.push({ label: 'Farming Income',         value:  data.farmingIncome!,  type: 'income-item', categories: ['FARMING_INCOME'] })
     if ((data.interestIncome ?? 0) > 0) rows.push({ label: 'Interest Income',        value:  data.interestIncome!, type: 'income-item', categories: ['INTEREST_INCOME'] })
     if ((data.businessIncome ?? 0) > 0) rows.push({ label: 'Business / Gratuity',   value:  data.businessIncome!, type: 'income-item', categories: ['BUSINESS_INCOME', 'GRATUITY'] })
     if ((data.allowanceIncome ?? 0) > 0) rows.push({ label: 'Allowances',            value:  data.allowanceIncome!,type: 'income-item', categories: ['ENTERTAINMENT_ALLOWANCE', 'VEHICLE_ALLOWANCE', 'SUBSISTENCE_ALLOWANCE', 'HOUSING_ALLOWANCE'] })
@@ -533,7 +535,15 @@ function BreakdownCard({ data, hasPaye5 = false, taxYear }: { data: TaxReturnMod
   if (data.medicalExpenses           > 0) rows.push({ label: 'Medical Expenses',            value: -data.medicalExpenses,          type: 'deduction-item', categories: ['MEDICAL'] })
   if (data.donationsToApprovedBodies > 0) rows.push({ label: 'Donations',                   value: -data.donationsToApprovedBodies,type: 'deduction-item', categories: ['DONATIONS'] })
   if (data.studyLoanInterest         > 0) rows.push({ label: 'Study Loan Interest',         value: -data.studyLoanInterest,        type: 'deduction-item', categories: ['STUDY_LOAN'] })
-  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item', categories: ['HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS', 'RENTAL_EXPENSE'] })
+  // Rental and trade/business expenses are ring-fenced against their own income — see
+  // the "Ring-fenced deductions" card below, not lumped in here as pooled "other".
+  if (data.otherDeductions           > 0) rows.push({ label: 'Other Deductions',             value: -data.otherDeductions,          type: 'deduction-item', categories: ['OTHER_DEDUCTION'] })
+  const rentalBasket  = data.ringFencedBaskets?.find((b) => b.basket === 'RENTAL')
+  const tradeBasket   = data.ringFencedBaskets?.find((b) => b.basket === 'TRADE')
+  const farmingBasket = data.ringFencedBaskets?.find((b) => b.basket === 'FARMING')
+  if ((rentalBasket?.allowedDeduction  ?? 0) > 0) rows.push({ label: 'Rental Expenses (ring-fenced)', value: -rentalBasket!.allowedDeduction, type: 'deduction-item', categories: ['RENTAL_EXPENSE'] })
+  if ((tradeBasket?.allowedDeduction   ?? 0) > 0) rows.push({ label: 'Trade / Business Expenses (ring-fenced)', value: -tradeBasket!.allowedDeduction, type: 'deduction-item', categories: ['HOME_OFFICE', 'PROFESSIONAL_FEES', 'VEHICLE_BUSINESS', 'TRAVEL_BUSINESS'] })
+  if ((farmingBasket?.allowedDeduction ?? 0) > 0) rows.push({ label: 'Farming Expenses (ring-fenced)', value: -farmingBasket!.allowedDeduction, type: 'deduction-item', categories: ['FARMING_EXPENSE'] })
 
   rows.push({ label: 'Taxable Income',              value:  data.taxableIncome,    type: 'subtotal' })
   rows.push({ label: 'Gross Tax',                   value:  data.grossTax,         type: 'tax' })
@@ -607,6 +617,87 @@ function BreakdownCard({ data, hasPaye5 = false, taxYear }: { data: TaxReturnMod
         />
       )}
     </>
+  )
+}
+
+/**
+ * Visualises how rental and trade/business deductions are ring-fenced against
+ * their own income — an expense in one basket can never shelter salary or the
+ * other basket's income. Mirrors exactly what's applied when filing to ITAS
+ * (see ItasDataMapper.buildReturnData), so this card and the actual return
+ * always agree.
+ */
+function RingFencedCard({ data }: { data: TaxReturnModel }) {
+  const baskets = (data.ringFencedBaskets ?? []).filter(
+    (b) => b.income > 0 || b.expenses > 0 || b.lossCarriedForwardIn > 0 || b.excessCarriedForwardOut > 0
+  )
+  if (baskets.length === 0) return null
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+        <ShieldCheck size={15} className="text-teal" />
+        <h2 className="section-title mb-0">Ring-fenced deductions</h2>
+      </div>
+      <p className="px-5 pt-3 text-xs text-slate-500">
+        Rental, trade/business and farming expenses may only reduce the income they were incurred
+        to earn — they never offset your salary or each other.
+      </p>
+      <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {baskets.map((b) => (
+          <RingFencedBasketPanel key={b.basket} basket={b} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RingFencedBasketPanel({ basket }: { basket: RingFencedBasket }) {
+  const pctUsed = basket.income > 0 ? Math.min(100, (basket.allowedDeduction / basket.income) * 100) : 0
+  const hasCarryIn = basket.lossCarriedForwardIn > 0
+  const hasCarryOut = basket.excessCarriedForwardOut > 0
+
+  return (
+    <div className="rounded-xl border border-slate-100 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-navy">{basket.incomeLabel}</span>
+        <span className="text-xs text-slate-400">Basket</span>
+      </div>
+
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>Income</span>
+          <span className="font-mono">{formatNAD(basket.income)}</span>
+        </div>
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>Expenses this year</span>
+          <span className="font-mono">({formatNAD(basket.expenses)})</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div className="h-full bg-teal rounded-full" style={{ width: `${pctUsed}%` }} />
+        </div>
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>Deductible this year{hasCarryIn ? ' (incl. carried forward)' : ''}</span>
+          <span className="font-mono text-coral">({formatNAD(basket.allowedDeduction)})</span>
+        </div>
+      </div>
+
+      {hasCarryIn && (
+        <p className="text-[11px] text-slate-400">
+          Includes {formatNAD(basket.lossCarriedForwardIn)} carried forward from a prior year.
+        </p>
+      )}
+
+      {hasCarryOut && (
+        <div className="flex items-start gap-1.5 text-[11px] text-amber-600 bg-amber-50 rounded-lg px-2.5 py-2">
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+          <span>
+            {formatNAD(basket.excessCarriedForwardOut)} of expenses exceed this year&apos;s {basket.incomeLabel.toLowerCase()} income
+            — carried forward to offset next year&apos;s {basket.incomeLabel.toLowerCase()} income.
+          </span>
+        </div>
+      )}
+    </div>
   )
 }
 
